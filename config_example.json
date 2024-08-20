@@ -1,0 +1,33 @@
+{
+    "port": 25600,
+    "skinDomains": [
+        "littleskin.cn"
+    ],
+    "apis": [
+        {
+            "id": "littleskin",
+            "name": "LittleSkin",
+            "root": "https://littleskin.cn/api/yggdrasil/sessionserver/"
+        },
+        {
+            "id": "original",
+            "name": "Official"
+        }
+    ],
+    "default": "original",
+    "method": [
+        {
+            "url": "/login/my",
+            "handles": [
+                "littleskin",
+                "original"
+            ]
+        }
+    ],
+    "push": {
+        "handles": {
+            "hypixel": "original",
+            "Dream": "original"
+        }
+    }
+}
