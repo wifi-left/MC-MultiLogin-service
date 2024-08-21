@@ -197,13 +197,15 @@ function urlHandle_profiles(req, res, from) {
     let url = req.url;
     url = url.substring(url.lastIndexOf("/") + 1)
     let profile_name = searchnameForUUID(url);
+    let info, api;
     if (!checkName(profile_name)) {
         log("[PROFILE] Looking up for " + url + " but check username failed.");
-        res.status(204).end();
-        return;
+        // res.status(204).end();
+        api = lookupApi(DefaultSKINSITE);
+    } else {
+        info = PlayerCache.lookup(profile_name);
+        api = lookupApi(info.from);
     }
-    let info = PlayerCache.lookup(profile_name);
-    let api = lookupApi(info.from);
     if (PUSH_LOGINMETHOD_PLAYERS[profile_name] != undefined) {
         api = lookupApi(PUSH_LOGINMETHOD_PLAYERS[profile_name]);
     } else if (api == null) {
