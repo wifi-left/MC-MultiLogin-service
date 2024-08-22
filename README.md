@@ -10,6 +10,12 @@
 5. 玩家改名跟踪。此特性未经测试，可能存在BUG。
  
 # 如何使用
+1. 下载 Node.JS 并且安装。
+2. 下载本项目，并解压。
+3. 按照下方的详解修改配置文件。
+4. 进入项目目录，使用 `npm test` 或者 `node login.js` 启动web服务。
+
+# 配置详解
 请按照示例修改 `config.json`。示例在 [config_example.json](./config_example.json)
 
 ## 详细解释
