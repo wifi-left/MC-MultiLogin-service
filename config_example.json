@@ -7,7 +7,7 @@
         {
             "id": "littleskin",
             "name": "LittleSkin",
-            "root": "https://littleskin.cn/api/yggdrasil/sessionserver/"
+            "root": "https://littleskin.cn/api/yggdrasil"
         },
         {
             "id": "original",
