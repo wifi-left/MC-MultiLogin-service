@@ -1,5 +1,6 @@
 const ConfigControl = require("./config.js").ConfigControl;
 const fs = require('fs');
+const path = require('path');
 const LOG_FILE_NAME = "./logs/latest.log";
 if (!fs.existsSync("./logs")) {
     fs.mkdirSync("./logs");
@@ -12,12 +13,14 @@ try {
     if (logNums > 0 && !isNaN(logNums)) {
         var folders = fs.readdirSync("./logs");
         let deleteCount = 0;
-        while ((folders.length - deleteCount) > logNums || (folders.length - deleteCount) <= 0) {
+        while ((folders.length - deleteCount) > logNums && (folders.length - deleteCount) > 0) {
             let pathName = "./logs/" + folders[deleteCount];
             let stat = fs.lstatSync(pathName);
             if (stat.isFile(pathName)) {
-                console.log(`[!] Deleting superfluous log: ${pathName}`)
-                fs.rmSync(pathName)
+                if (path.extname(pathName) == ".log"){
+                    console.log(`[!] Deleting superfluous log: ${pathName}`)
+                    fs.rmSync(pathName);
+                }
             }
             deleteCount++;
         }
