@@ -1,5 +1,6 @@
 {
     "port": 25600,
+    "log_remaining_number": 5,
     "skinDomains": [
         "littleskin.cn"
     ],

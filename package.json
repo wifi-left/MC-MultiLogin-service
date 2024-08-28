@@ -5,7 +5,7 @@
   "main": "login.js",
   "scripts": {
     "test": "node login.js",
-    "run": "node login.js"
+    "login-server": "node login.js"
   },
   "repository": {
     "type": "git",

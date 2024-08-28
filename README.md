@@ -13,13 +13,14 @@
 1. 下载 Node.JS 并且安装。
 2. 下载本项目，并解压。
 3. 按照下方的详解修改配置文件。
-4. 进入项目目录，使用 `npm test` 或者 `node login.js` 启动web服务。
+4. 进入项目目录，使用 `npm run login-server` 或者 `node login.js` 启动web服务。
 
 # 配置详解
 请按照示例修改 `config.json`。示例在 [config_example.json](./config_example.json)
 
 ## 详细解释
 - `port`: 如字面意思，端口
+- `log_remaining_number`: 历史日志保留个数。如果不想保留请设置为 -1。
 -  `skinDomains`: 就是皮肤站 `api/yggdrasil` 的 skinDomains，可以随便改，建议加上所有可能出现的皮肤域名。（比如`littleskin.cn`）
 - `apis`: API配置。详见[API子配置章节](#API子配置)
 - `default`: 如果没有找到玩家数据，默认使用的皮肤站。如 `original` 会使用原版API（预置）。
