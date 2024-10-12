@@ -195,7 +195,12 @@ function urlHandle_profiles(req, res, from) {
     let handle = HANDLES[from];
     let url = req.url;
     url = url.substring(url.lastIndexOf("/") + 1)
-    let profile_name = searchnameForUUID(url);
+    let uuid1 = url;
+    if(uuid1.endsWith("?unsigned=false")){
+        uuid1=uuid1.substring(0,uuid1.length - "?unsigned=false".length);
+    }
+    let profile_name = searchnameForUUID(uuid1);
+
     let info, api;
     if (!checkName(profile_name)) {
         log("[PROFILE] Looking up for " + url + " but check username failed.");
