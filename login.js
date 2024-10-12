@@ -196,14 +196,18 @@ function urlHandle_profiles(req, res, from) {
     let url = req.url;
     url = url.substring(url.lastIndexOf("/") + 1)
     let uuid1 = url;
-    if(uuid1.endsWith("?unsigned=false")){
-        uuid1=uuid1.substring(0,uuid1.length - "?unsigned=false".length);
+    if (uuid1.endsWith("?unsigned=false")) {
+        uuid1 = uuid1.substring(0, uuid1.length - "?unsigned=false".length);
     }
     let profile_name = searchnameForUUID(uuid1);
 
     let info, api;
     if (!checkName(profile_name)) {
-        log("[PROFILE] Looking up for " + url + " but check username failed.");
+        if (profile_name != null) {
+            log("[PROFILE] Looking up for " + uuid1 + " but check username (" + profile_name + ") failed.");
+        }else{
+            log("[PROFILE] Looking up for " + uuid1 + " but can't find it in cache.");
+        }
         // res.status(204).end();
         api = lookupApi(DefaultSKINSITE);
     } else {
