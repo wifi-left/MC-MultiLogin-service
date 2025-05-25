@@ -11,12 +11,10 @@ function ConfigControl(filename) {
             this.config = JSON.parse(fs.readFileSync(filename));
         } catch (e) {
             // config = {}
-            try {
-                fs.writeFileSync(filename, JSON.stringify(this.config));
-            } catch (e) {
-                console.error(e);
-                return false;
-            }
+            console.error("Cannot load config from " + filename + ":" + e.message);
+            console.error(e);
+
+            return false;
         }
         return true;
     }
