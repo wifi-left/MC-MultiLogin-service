@@ -17,6 +17,7 @@
 
 # 配置详解
 请按照示例修改 `config.json`。示例在 [config_example.json](./config_example.json)
+> 错误的JSON文件在启动时会被清空，可使用config_example.json作为备份。
 
 ## 详细解释
 - `port`: 如字面意思，端口
