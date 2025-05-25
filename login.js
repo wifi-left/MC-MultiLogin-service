@@ -24,6 +24,10 @@ var SkinDomains = globleConfig.get("skinDomains", ["127.0.0.1"]);
 var DefaultSKINSITE = globleConfig.get("default", "original");
 // HTML 开始处理
 // 注册URL
+if (HANDLES.length <= 0) {
+    console.error("The server doesn't have any URL handles. Please check your config file.");
+    return false;
+}
 for (let i = 0; i < HANDLES.length; i++) {
     let url = HANDLES[i].url;
     let idx = i + 0;
