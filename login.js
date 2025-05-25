@@ -19,14 +19,15 @@ const readline = require('readline').createInterface({
 
 var PUSH_LOGINMETHOD_PLAYERS = globleConfig.get("push", { "handles": [] }).handles;
 var URL_APIS = globleConfig.get("apis", {});
-var HANDLES = globleConfig.get("method", {});
+var HANDLES = globleConfig.get("method", []);
 var SkinDomains = globleConfig.get("skinDomains", ["127.0.0.1"]);
 var DefaultSKINSITE = globleConfig.get("default", "original");
 // HTML 开始处理
 // 注册URL
-if (HANDLES.length <= 0) {
-    console.error("The server doesn't have any URL handles. Please check your config file.");
-    return false;
+if (HANDLES == null || HANDLES.length <= 0) {
+    log("[WARN] The server doesn't have any URL handles. Please check your config file.");
+    process.exit(1)
+    return;
 }
 for (let i = 0; i < HANDLES.length; i++) {
     let url = HANDLES[i].url;

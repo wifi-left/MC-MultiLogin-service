@@ -11,7 +11,7 @@
     "type": "git",
     "url": "main"
   },
-  "author": "Bamboo丶Gamom",
+  "author": "wifi-left",
   "license": "ISC",
   "dependencies": {
     "express": "^4.18.2",

@@ -3,16 +3,22 @@ const fs = require('fs');
 function ConfigControl(filename) {
     this.filename = filename ? filename : "config.json";
     this.config = {};
-    this.reload = function() {
+    this.reload = function () {
         return this.load();
     }
     this.load = function () {
+        if (!fs.existsSync(filename)) {
+            // this.config = {};
+            console.error("[ERROR] Cannot load config from " + filename + ": The file doesn't exist.");
+            fs.writeFileSync(filename, JSON.stringify(this.config))
+        }
         try {
             this.config = JSON.parse(fs.readFileSync(filename));
+
         } catch (e) {
             // config = {}
-            console.error("Cannot load config from " + filename + ":" + e.message);
-            console.error(e);
+            console.error("[ERROR] Cannot load config from " + filename + ": " + e.message);
+            // log("[ERROR] Cannot load config from " + filename + ": " + e.message);
 
             return false;
         }
