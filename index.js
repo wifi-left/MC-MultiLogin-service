@@ -38,6 +38,7 @@ for (let i = 0; i < HANDLES.length; i++) {
     app.get(`${url}/sessionserver/session/minecraft/hasJoined`, function (req, res) { urlHandle_joinServer(req, res, idx) });
     app.post(`${url}/minecraftservices/minecraft/profile/lookup/bulk/byname`, function (req, res) { urlHandle_profiles_post(req, res, idx) });
     app.get(`${url}/sessionserver/session/minecraft/profile/*`, function (req, res) { urlHandle_profiles(req, res, idx) })
+    app.get(`${url}/api/minecraft/profile/lookup/name/*`, function (req, res) { urlHandle_profiles(req, res, idx) })
 
 }
 // 皮肤站处理开始
@@ -210,7 +211,7 @@ function urlHandle_profiles(req, res, from) {
     if (!checkName(profile_name)) {
         if (profile_name != null) {
             log("[PROFILE] Looking up for " + uuid1 + " but check username (" + profile_name + ") failed.");
-        }else{
+        } else {
             log("[PROFILE] Looking up for " + uuid1 + " but can't find it in cache.");
         }
         // res.status(204).end();
@@ -235,10 +236,10 @@ function urlHandle_profiles(req, res, from) {
             return;
         }
     }
-    log("[PROFILE] Looking up for " + profile_name + "(" + url + ") from <" + api.name + ">");
+    if (profile_name == null) {
+        log("[PROFILE] Looking up for " + url + " from <Original>");
 
-    if (api.id == 'original') {
-        Fetch("https://sessionserver.mojang.com/session/minecraft/profile/" + url).then(data => {
+        Fetch("https://api.minecraftservices.com/minecraft/profile/lookup/name/" + url).then(data => {
             res.status(data.status);
             return data.text()
         }).then(data => {
@@ -247,18 +248,32 @@ function urlHandle_profiles(req, res, from) {
             console.error(e);
             res.status(204).end();
         })
-
     } else {
-        Fetch(api.root + "/sessionserver/session/minecraft/profile/" + url).then(data => {
-            res.status(data.status);
-            return data.text()
+        log("[PROFILE] Looking up for " + profile_name + "(" + url + ") from <" + api.name + ">");
+
+        if (api.id == 'original') {
+            Fetch("https://sessionserver.mojang.com/session/minecraft/profile/" + url).then(data => {
+                res.status(data.status);
+                return data.text()
+            }).then(data => {
+                res.send(data).end();
+            }).catch(e => {
+                console.error(e);
+                res.status(204).end();
+            })
+
+        } else {
+            Fetch(api.root + "/sessionserver/session/minecraft/profile/" + url).then(data => {
+                res.status(data.status);
+                return data.text()
+            }
+            ).then(data => {
+                res.send(data).end();
+            }).catch(e => {
+                console.error(e);
+                res.status(204).end();
+            })
         }
-        ).then(data => {
-            res.send(data).end();
-        }).catch(e => {
-            console.error(e);
-            res.status(204).end();
-        })
     }
 }
 function lookupApi(apiname) {

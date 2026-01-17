@@ -2,10 +2,11 @@
   "name": "mc-multilogin",
   "version": "1.0.0",
   "description": "A web application",
-  "main": "login.js",
+  "main": "index.js",
   "scripts": {
-    "test": "node login.js",
-    "login-server": "node login.js"
+    "test": "node index.js",
+    "login-server": "node index.js",
+    "server": "node index.js"
   },
   "repository": {
     "type": "git",

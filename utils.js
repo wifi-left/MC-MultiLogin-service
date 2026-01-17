@@ -1,4 +1,4 @@
-const ConfigControl = require("./config.js").ConfigControl;
+const ConfigControl = require("./config_control.js").ConfigControl;
 const fs = require('fs');
 const path = require('path');
 const LOG_FILE_NAME = "./logs/latest.log";
