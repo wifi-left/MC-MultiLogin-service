@@ -22,7 +22,7 @@
 npm install
 ```
 
-安装成功后，使用 `npm run login-server` 或者 `node login.js` 启动web服务。
+安装成功后，使用 `npm run server` 或者 `node index.js` 启动web服务。
 
 ## 配置详解
 
