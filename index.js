@@ -48,6 +48,12 @@ for (let i = 0; i < HANDLES.length; i++) {
     app.post(`${url}/ban/uuid/:uuid/:time`, function (req, res) { urlHandle_ban_uuid(req, res, idx) });
     app.post(`${url}/ban/name/:name/:time`, function (req, res) { urlHandle_ban_name(req, res, idx) });
 
+    // Management API endpoints
+    app.post(`${url}/manage/query/:player`, function (req, res) { urlHandle_manage_query(req, res, idx) });
+    app.post(`${url}/manage/list`, function (req, res) { urlHandle_manage_list(req, res, idx) });
+    app.post(`${url}/manage/modify/:player`, function (req, res) { urlHandle_manage_modify(req, res, idx) });
+    app.post(`${url}/manage/delete/:player`, function (req, res) { urlHandle_manage_delete(req, res, idx) });
+
 }
 // 皮肤站处理开始
 function trySavePlayer(player, api, response_data, res, from) {
@@ -487,11 +493,183 @@ function urlHandle_ban_name(req, res, from) {
     });
 }
 
+function urlHandle_manage_query(req, res, from) {
+    let playerName = req.params.player;
+    let handle = HANDLES[from];
+    let secret = handle.secret;
+
+    if (!secret) {
+        res.status(403).send({ "error": "Secret key not configured for this endpoint" }).end();
+        return;
+    }
+
+    let body = '';
+    req.on('data', (chunk) => {
+        body += chunk;
+    });
+
+    req.on('end', () => {
+        try {
+            let data = JSON.parse(body);
+            if (data.secret !== secret) {
+                res.status(403).send({ "error": "Invalid secret key" }).end();
+                return;
+            }
+
+            if (!checkName(playerName)) {
+                res.status(400).send({ "error": "Invalid player name" }).end();
+                return;
+            }
+
+            let playerData = PlayerCaches[from].lookup(playerName);
+            if (!playerData) {
+                res.status(404).send({ "error": "Player not found in cache" }).end();
+                return;
+            }
+
+            res.send({ "success": true, "data": playerData }).end();
+        } catch (e) {
+            console.error(e);
+            res.status(400).send({ "error": "Invalid request" }).end();
+        }
+    });
+}
+
+function urlHandle_manage_list(req, res, from) {
+    let handle = HANDLES[from];
+    let secret = handle.secret;
+
+    if (!secret) {
+        res.status(403).send({ "error": "Secret key not configured for this endpoint" }).end();
+        return;
+    }
+
+    let body = '';
+    req.on('data', (chunk) => {
+        body += chunk;
+    });
+
+    req.on('end', () => {
+        try {
+            let data = JSON.parse(body);
+            if (data.secret !== secret) {
+                res.status(403).send({ "error": "Invalid secret key" }).end();
+                return;
+            }
+
+            let players = PlayerCaches[from].list_players();
+            res.send({ "success": true, "players": players, "count": players.length }).end();
+        } catch (e) {
+            console.error(e);
+            res.status(400).send({ "error": "Invalid request" }).end();
+        }
+    });
+}
+
+function urlHandle_manage_modify(req, res, from) {
+    let playerName = req.params.player;
+    let handle = HANDLES[from];
+    let secret = handle.secret;
+
+    if (!secret) {
+        res.status(403).send({ "error": "Secret key not configured for this endpoint" }).end();
+        return;
+    }
+
+    let body = '';
+    req.on('data', (chunk) => {
+        body += chunk;
+    });
+
+    req.on('end', () => {
+        try {
+            let data = JSON.parse(body);
+            if (data.secret !== secret) {
+                res.status(403).send({ "error": "Invalid secret key" }).end();
+                return;
+            }
+
+            if (!checkName(playerName)) {
+                res.status(400).send({ "error": "Invalid player name" }).end();
+                return;
+            }
+
+            if (!data.playerData) {
+                res.status(400).send({ "error": "Missing playerData field" }).end();
+                return;
+            }
+
+            let result = PlayerCaches[from].modify(playerName, data.playerData);
+            if (result) {
+                log(`[MANAGE] Modified player data for <${playerName}>`);
+                res.send({ "success": true, "player": playerName }).end();
+            } else {
+                res.status(404).send({ "error": "Player not found in cache" }).end();
+            }
+        } catch (e) {
+            console.error(e);
+            res.status(400).send({ "error": "Invalid request" }).end();
+        }
+    });
+}
+
+function urlHandle_manage_delete(req, res, from) {
+    let playerName = req.params.player;
+    let handle = HANDLES[from];
+    let secret = handle.secret;
+
+    if (!secret) {
+        res.status(403).send({ "error": "Secret key not configured for this endpoint" }).end();
+        return;
+    }
+
+    let body = '';
+    req.on('data', (chunk) => {
+        body += chunk;
+    });
+
+    req.on('end', () => {
+        try {
+            let data = JSON.parse(body);
+            if (data.secret !== secret) {
+                res.status(403).send({ "error": "Invalid secret key" }).end();
+                return;
+            }
+
+            if (!checkName(playerName)) {
+                res.status(400).send({ "error": "Invalid player name" }).end();
+                return;
+            }
+
+            let result = PlayerCaches[from].delete(playerName);
+            if (result) {
+                log(`[MANAGE] Deleted player cache for <${playerName}>`);
+                res.send({ "success": true, "player": playerName }).end();
+            } else {
+                res.status(404).send({ "error": "Player not found in cache" }).end();
+            }
+        } catch (e) {
+            console.error(e);
+            res.status(400).send({ "error": "Invalid request" }).end();
+        }
+    });
+}
+
 // 皮肤站处理结束
 
 
 app.get('/', function (req, res) {
     res.sendFile(__dirname + "/web/public/" + "index.html");
+})
+app.get('/manage', function (req, res) {
+    res.sendFile(__dirname + "/web/public/" + "manage.html");
+})
+app.get('/api/methods', function (req, res) {
+    let methods = HANDLES.map((handle, idx) => ({
+        url: handle.url,
+        name: handle.name || 'default'
+    }));
+    res.send(methods).end();
 })
 app.get("/favicon.ico", function (req, res) { res.end() })
 

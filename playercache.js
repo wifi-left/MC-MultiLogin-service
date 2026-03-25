@@ -151,6 +151,56 @@ function class_PlayerCache(path) {
         return false;
 
     }
+    this.list_players = function () {
+        try {
+            let files = fs.readdirSync(this.path);
+            let players = [];
+            for (let file of files) {
+                if (file.endsWith('.json') && file !== 'ud.json') {
+                    players.push(file.substring(0, file.length - 5));
+                }
+            }
+            return players;
+        } catch (e) {
+            console.error(e);
+            return [];
+        }
+    }
+    this.modify = function (player, newData) {
+        if (!checkName(player)) return false;
+        if (!fs.existsSync(this.path + "/" + player + ".json")) {
+            return false;
+        }
+        try {
+            fs.writeFileSync(this.path + "/" + player + ".json", JSON.stringify(newData, null, 2));
+            if (newData.uuid && newData.name) {
+                this.cacheUUID(newData.name, newData.uuid);
+            }
+            return true;
+        } catch (e) {
+            console.error(e);
+        }
+        return false;
+    }
+    this.delete = function (player) {
+        if (!checkName(player)) return false;
+        if (!fs.existsSync(this.path + "/" + player + ".json")) {
+            return false;
+        }
+        try {
+            let content = fs.readFileSync(this.path + "/" + player + ".json");
+            let data = JSON.parse(content);
+            if (data.uuid) {
+                delete this.UUIDCache[data.uuid];
+                fs.writeFileSync(this.path + "/ud.json", JSON.stringify(this.UUIDCache, null, 0));
+            }
+            fs.rmSync(this.path + "/" + player + ".json");
+            return true;
+        } catch (e) {
+            console.error(e);
+        }
+        return false;
+    }
     if (!fs.existsSync(path)) {
         fs.mkdirSync(path, { recursive: true });
     }
