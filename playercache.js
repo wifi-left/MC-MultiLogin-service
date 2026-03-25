@@ -98,13 +98,11 @@ function class_PlayerCache(path) {
         } else {
             if (t != player) {
                 let info = this.lookup(t);
-                if (info.from != from) {
-                    log(`<${player}>(From <${from}>) was not allowed to join the server. Because it has a duplicate uuid (the same as <${t}>(From <${info.from}>)).`)
-
-                    return { error: "DUPLICATE_UUID", existingName: t, existingFrom: info.from };
-                }
-                log("[RENAME] <" + t + "> renamed to <" + player + ">")
-                this.player_changename(t, player);
+                // info may be false if UUID cache is stale (player file deleted manually);
+                // still reject to avoid UUID conflicts.
+                let existingFrom = info ? info.from : null;
+                log(`<${player}>(From <${from}>) was not allowed to join the server. Because it has a duplicate uuid (the same as <${t}>(From <${existingFrom}>)).`)
+                return { error: "DUPLICATE_UUID", existingName: t, existingFrom: existingFrom };
             }
         }
         return true;
@@ -118,9 +116,9 @@ function class_PlayerCache(path) {
         try {
             let content = fs.readFileSync(this.path + "/" + original_name + ".json");
             let data = JSON.parse(content);
-            let k = data['names'];
+            let k = data['old_names'];
             if (k == undefined) {
-                data['names'] = [];
+                data['old_names'] = [];
             }
             data['old_names'].push(original_name)
             data['name'] = new_name;

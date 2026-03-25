@@ -209,23 +209,25 @@ function urlHandle_joinServer(req, res, from) {
     }
     log('[JOIN] <' + username + "> want to join. IP: " + ipdisplay + "");
     let info = PlayerCaches[from].lookup(username);
-    if (info.ban == true) {
-        if (info.banTime == 0) {
-            console.log("Player was forever banned.")
-            detailReject(res, detail, "BANNED_FOREVER", getMsg("BANNED_FOREVER", {}));
-            return;
-        }
-        else if (info.banTime <= new Date().getTime()) {
-            info.ban = false;
-            PlayerCaches[from].new_ban(username, -1)
-            console.log("<" + username + "> was unbanned (Timeout).")
-        } else {
-            console.log("Player was banned.")
-            detailReject(res, detail, "BANNED", getMsg("BANNED", {}));
-            return;
+    if (info) {
+        if (info.ban == true) {
+            if (info.banTime == 0) {
+                console.log("Player was forever banned.")
+                detailReject(res, detail, "BANNED_FOREVER", getMsg("BANNED_FOREVER", {}));
+                return;
+            }
+            else if (info.banTime <= new Date().getTime()) {
+                info.ban = false;
+                PlayerCaches[from].new_ban(username, -1)
+                console.log("<" + username + "> was unbanned (Timeout).")
+            } else {
+                console.log("Player was banned.")
+                detailReject(res, detail, "BANNED", getMsg("BANNED", {}));
+                return;
+            }
         }
     }
-    let api = lookupApi(info.from);
+    let api = info ? lookupApi(info.from) : null;
 
     if (PUSH_LOGINMETHOD_PLAYERS[profile_name] != undefined) {
         api = lookupApi(PUSH_LOGINMETHOD_PLAYERS[profile_name]);
@@ -390,7 +392,7 @@ function urlHandle_profiles_post(req, res, from) {
             }
             for (let i = 0; i < 1; i++) {
                 let info = PlayerCaches[from].lookup(bdy[i]);
-                let api = lookupApi(info.from);
+                let api = info ? lookupApi(info.from) : null;
                 if (PUSH_LOGINMETHOD_PLAYERS[bdy[i]] != undefined) {
                     api = lookupApi(PUSH_LOGINMETHOD_PLAYERS[bdy[i]]);
                 } else if (api == null) {
