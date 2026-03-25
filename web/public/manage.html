@@ -45,12 +45,15 @@
             border: 1px solid #ddd;
             border-radius: 4px;
             box-sizing: border-box;
-            color: #333;              /* 修复文本颜色 */
-            background-color: #fff;   /* 避免系统主题导致对比度异常 */
+            color: #333;
+            /* 修复文本颜色 */
+            background-color: #fff;
+            /* 避免系统主题导致对比度异常 */
         }
 
         select option {
-            color: #333;              /* 修复 option 文本颜色 */
+            color: #333;
+            /* 修复 option 文本颜色 */
             background-color: #fff;
         }
 
@@ -120,6 +123,45 @@
 
         .player-item:hover {
             background: #f0f0f0;
+        }
+
+        .search-row {
+            display: flex;
+            gap: 10px;
+            margin: 12px 0;
+            align-items: center;
+        }
+
+        .search-row input {
+            flex: 1 1 auto;
+            min-width: 260px;
+            width: auto;
+            /* 覆盖全局 width:100% */
+        }
+
+        .search-row select {
+            flex: 0 0 160px;
+            width: 160px;
+            /* 固定选择框宽度，避免过长 */
+        }
+
+        .search-row button {
+            flex: 0 0 auto;
+            white-space: nowrap;
+        }
+
+        /* 小屏自适应 */
+        @media (max-width: 640px) {
+            .search-row {
+                flex-wrap: wrap;
+            }
+
+            .search-row input,
+            .search-row select,
+            .search-row button {
+                width: 100%;
+                flex: 1 1 100%;
+            }
         }
 
         pre {
@@ -203,6 +245,17 @@
         <div class="config-section">
             <h2>玩家列表</h2>
             <button onclick="loadPlayerList()">刷新列表</button>
+
+            <div class="search-row">
+                <input type="text" id="playerSearchInput" placeholder="搜索玩家（本地缓存）" oninput="updatePlayerSearch()">
+                <select id="playerSearchField" onchange="updatePlayerSearch()">
+                    <option value="all">名称 + UUID</option>
+                    <option value="name">仅名称</option>
+                    <option value="uuid">仅 UUID</option>
+                </select>
+                <button class="secondary" onclick="clearPlayerSearch()">清空</button>
+            </div>
+
             <div id="playerListResult" class="result"></div>
             <ul id="playerList" class="player-list"></ul>
 
@@ -261,7 +314,8 @@
             <button class="secondary" onclick="loadPlayerData()">加载数据</button>
             <div class="form-group">
                 <label for="modifyPlayerData">玩家数据 (JSON):</label>
-                <textarea id="modifyPlayerData" rows="15" placeholder='{"name": "player", "uuid": "...", ...}'></textarea>
+                <textarea id="modifyPlayerData" rows="15"
+                    placeholder='{"name": "player", "uuid": "...", ...}'></textarea>
             </div>
             <button onclick="modifyPlayer()">保存修改</button>
             <button class="danger" onclick="deletePlayer()">删除玩家</button>
@@ -335,6 +389,53 @@
         let currentPlayerPage = 1;
         const PLAYER_PAGE_SIZE = 20;
 
+        // 本地搜索关键字
+        let playerSearchKeyword = '';
+        let playerSearchField = 'all'; // all | name | uuid
+
+        function normalizePlayer(player) {
+            if (typeof player === 'string') {
+                return { name: player, uuid: '', raw: player };
+            }
+            return {
+                name: player?.name || player?.playerName || '',
+                uuid: player?.uuid || player?.id || '',
+                raw: player
+            };
+        }
+
+        function updatePlayerSearch() {
+            const input = document.getElementById('playerSearchInput');
+            const field = document.getElementById('playerSearchField');
+            playerSearchKeyword = (input?.value || '').trim().toLowerCase();
+            playerSearchField = field?.value || 'all';
+            renderPlayerPage(1);
+        }
+
+        function clearPlayerSearch() {
+            const input = document.getElementById('playerSearchInput');
+            const field = document.getElementById('playerSearchField');
+            if (input) input.value = '';
+            if (field) field.value = 'all';
+            playerSearchKeyword = '';
+            playerSearchField = 'all';
+            renderPlayerPage(1);
+        }
+
+        function getFilteredPlayers() {
+            if (!playerSearchKeyword) return allPlayers;
+
+            return allPlayers.filter(item => {
+                const p = normalizePlayer(item);
+                const name = String(p.name).toLowerCase();
+                const uuid = String(p.uuid).toLowerCase();
+
+                if (playerSearchField === 'name') return name.includes(playerSearchKeyword);
+                if (playerSearchField === 'uuid') return uuid.includes(playerSearchKeyword);
+                return name.includes(playerSearchKeyword) || uuid.includes(playerSearchKeyword);
+            });
+        }
+
         async function loadPlayerList() {
             const method = getSelectedMethod();
             const secret = getSecret();
@@ -371,35 +472,59 @@
             const nextBtn = document.getElementById('nextPageBtn');
             const pageInfo = document.getElementById('playerPageInfo');
 
-            if (!Array.isArray(allPlayers) || allPlayers.length === 0) {
+            const filteredPlayers = getFilteredPlayers();
+
+            if (!Array.isArray(filteredPlayers) || filteredPlayers.length === 0) {
                 listEl.innerHTML = '';
+                if (allPlayers.length > 0 && playerSearchKeyword) {
+                    const emptyLi = document.createElement('li');
+                    emptyLi.className = 'player-item';
+                    emptyLi.textContent = '未找到匹配玩家';
+                    listEl.appendChild(emptyLi);
+                }
                 paginationEl.style.display = 'none';
                 return;
             }
 
-            const totalPages = Math.max(1, Math.ceil(allPlayers.length / PLAYER_PAGE_SIZE));
+            const totalPages = Math.max(1, Math.ceil(filteredPlayers.length / PLAYER_PAGE_SIZE));
             currentPlayerPage = Math.min(Math.max(page, 1), totalPages);
 
             const start = (currentPlayerPage - 1) * PLAYER_PAGE_SIZE;
             const end = start + PLAYER_PAGE_SIZE;
-            const pagePlayers = allPlayers.slice(start, end);
+            const pagePlayers = filteredPlayers.slice(start, end);
 
             listEl.innerHTML = '';
-            pagePlayers.forEach(player => {
+            pagePlayers.forEach(item => {
+                const p = normalizePlayer(item);
+
                 const li = document.createElement('li');
                 li.className = 'player-item';
-                li.innerHTML = `
-                    <span>${player}</span>
-                    <div>
-                        <button class="secondary" onclick="viewPlayer('${player}')">查看</button>
-                        <button class="danger" onclick="quickDelete('${player}')">删除</button>
-                    </div>
-                `;
+
+                const left = document.createElement('span');
+                left.textContent = p.uuid ? `${p.name} (${p.uuid})` : p.name;
+
+                const right = document.createElement('div');
+
+                const viewBtn = document.createElement('button');
+                viewBtn.className = 'secondary';
+                viewBtn.textContent = '查看';
+                viewBtn.onclick = () => viewPlayer(p.name);
+
+                const delBtn = document.createElement('button');
+                delBtn.className = 'danger';
+                delBtn.textContent = '删除';
+                delBtn.onclick = () => quickDelete(p.name);
+
+                right.appendChild(viewBtn);
+                right.appendChild(delBtn);
+
+                li.appendChild(left);
+                li.appendChild(right);
                 listEl.appendChild(li);
             });
 
             paginationEl.style.display = totalPages > 1 ? 'flex' : 'none';
-            pageInfo.textContent = `第 ${currentPlayerPage} / ${totalPages} 页（共 ${allPlayers.length} 个）`;
+            pageInfo.textContent = `第 ${currentPlayerPage} / ${totalPages} 页（匹配 ${filteredPlayers.length} / 总计 ${allPlayers.length}）`;
             prevBtn.disabled = currentPlayerPage <= 1;
             nextBtn.disabled = currentPlayerPage >= totalPages;
         }
