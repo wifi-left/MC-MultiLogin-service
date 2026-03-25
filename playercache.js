@@ -73,9 +73,14 @@ function class_PlayerCache(path) {
     }
     this.add_raw = function (player, info) {
 
-        if (!checkName(player)) return false;
+        if (!checkName(player)) return { error: "INVALID_NAME" };
         if (fs.existsSync(this.path + "/" + player + ".json")) {
-            return false;
+            try {
+                let existing = JSON.parse(fs.readFileSync(this.path + "/" + player + ".json"));
+                return { error: "DUPLICATE_NAME", existingFrom: existing.from };
+            } catch (e) {
+                return { error: "DUPLICATE_NAME" };
+            }
         }
         this.cacheUUID(player, info.uuid);
         fs.writeFileSync(this.path + "/" + player + ".json", JSON.stringify(info, null, 2));
@@ -85,19 +90,18 @@ function class_PlayerCache(path) {
         let t = this.lookup_uuid(uuid);
         if (t == undefined) {
 
-            this.add_raw(player, {
+            return this.add_raw(player, {
                 "name": player,
                 "uuid": uuid,
                 "from": from
             });
-            return true;
         } else {
             if (t != player) {
                 let info = this.lookup(t);
                 if (info.from != from) {
-                    log(`<${player}>(From <${info.from}>) was not allowed to join the server. Because it has a duplicate uuid (the same as <${t}>(From <${info.from}>)).`)
+                    log(`<${player}>(From <${from}>) was not allowed to join the server. Because it has a duplicate uuid (the same as <${t}>(From <${info.from}>)).`)
 
-                    return false;
+                    return { error: "DUPLICATE_UUID", existingName: t, existingFrom: info.from };
                 }
                 log("[RENAME] <" + t + "> renamed to <" + player + ">")
                 this.player_changename(t, player);

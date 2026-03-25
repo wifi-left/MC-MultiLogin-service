@@ -62,12 +62,40 @@ for (let i = 0; i < HANDLES.length; i++) {
 
 }
 // 皮肤站处理开始
-function trySavePlayer(player, api, response_data, res, from) {
+function buildDetailError(k) {
+    if (k.error === "DUPLICATE_NAME") {
+        return {
+            "error": "ForbiddenOperationException",
+            "errorMessage": `该玩家名已被来自 "${k.existingFrom || "未知皮肤站"}" 的账号占用，不允许其他皮肤站的同名玩家登录`,
+            "cause": "DUPLICATE_NAME"
+        };
+    }
+    if (k.error === "DUPLICATE_UUID") {
+        return {
+            "error": "ForbiddenOperationException",
+            "errorMessage": `该账号的 UUID 与已有玩家 "${k.existingName}"（来自 "${k.existingFrom || "未知皮肤站"}"）冲突`,
+            "cause": "DUPLICATE_UUID"
+        };
+    }
+    return {
+        "error": "ForbiddenOperationException",
+        "errorMessage": "登录被拒绝",
+        "cause": k.error || "UNKNOWN"
+    };
+}
+function trySavePlayer(player, api, response_data, res, from, detail) {
     log("[FOUND] Found <" + player + "> should come from <" + api.name + ">");
     let dat = response_data;
     let k = PlayerCaches[from].add(dat.name, dat.id, api.id);
-    if (k == false) res.status(204).end()
-    else res.send(response_data).end();
+    if (k !== true) {
+        if (detail && k && k.error) {
+            res.status(403).send(buildDetailError(k)).end();
+        } else {
+            res.status(204).end();
+        }
+    } else {
+        res.send(response_data).end();
+    }
 
 }
 function urlHandle_root(req, res, from) {
@@ -79,7 +107,7 @@ function urlHandle_root(req, res, from) {
         "skinDomains": SkinDomains
     }).end();
 }
-function fetchPlayerInfo_step(args, apis, res, player, from) {
+function fetchPlayerInfo_step(args, apis, res, player, from, detail) {
     if (apis.length <= 0) {
         res.status(204).end();
         log(`${player} not found in the remote server.`);
@@ -99,12 +127,12 @@ function fetchPlayerInfo_step(args, apis, res, player, from) {
             return data.json()
         }
         ).then(data => {
-            trySavePlayer(player, api, data, res, from);
+            trySavePlayer(player, api, data, res, from, detail);
         }).catch(e => {
             // console.error(e);
             // res.status(204).end();
             // 寻找下一个
-            fetchPlayerInfo_step(args, b, res, player, from);
+            fetchPlayerInfo_step(args, b, res, player, from, detail);
         })
 
     } else {
@@ -116,7 +144,7 @@ function fetchPlayerInfo_step(args, apis, res, player, from) {
             return data.json()
         }).then(data => {
             // 记录了
-            trySavePlayer(player, api, data, res, from);
+            trySavePlayer(player, api, data, res, from, detail);
         }).catch(e => {
             // console.error(e);
             // res.status(204).end();
