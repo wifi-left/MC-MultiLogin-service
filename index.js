@@ -23,6 +23,11 @@ var HANDLES = globleConfig.get("method", []);
 var SkinDomains = globleConfig.get("skinDomains", ["127.0.0.1"]);
 var DefaultSKINSITE = globleConfig.get("default", "original");
 var PlayerCaches = {};
+// 管理服务器配置
+var manageUrl = globleConfig.get("manage_url", "/manage");
+var manageApp = globleConfig.get("manage_port", 0) > 0 ? express() : null;
+var managePort = 0;
+var manageServer = null;
 // HTML 开始处理
 // 注册URL
 if (HANDLES == null || HANDLES.length <= 0) {
@@ -45,14 +50,15 @@ for (let i = 0; i < HANDLES.length; i++) {
     app.get(`${url}/api/minecraft/profile/lookup/name/*`, function (req, res) { urlHandle_profiles(req, res, idx) })
 
     // Ban API endpoints
-    app.post(`${url}/ban/uuid/:uuid/:time`, function (req, res) { urlHandle_ban_uuid(req, res, idx) });
-    app.post(`${url}/ban/name/:name/:time`, function (req, res) { urlHandle_ban_name(req, res, idx) });
+    let mApp = manageApp || app;
+    mApp.post(`${url}/ban/uuid/:uuid/:time`, function (req, res) { urlHandle_ban_uuid(req, res, idx) });
+    mApp.post(`${url}/ban/name/:name/:time`, function (req, res) { urlHandle_ban_name(req, res, idx) });
 
     // Management API endpoints
-    app.post(`${url}/manage/query/:player`, function (req, res) { urlHandle_manage_query(req, res, idx) });
-    app.post(`${url}/manage/list`, function (req, res) { urlHandle_manage_list(req, res, idx) });
-    app.post(`${url}/manage/modify/:player`, function (req, res) { urlHandle_manage_modify(req, res, idx) });
-    app.post(`${url}/manage/delete/:player`, function (req, res) { urlHandle_manage_delete(req, res, idx) });
+    mApp.post(`${url}/manage/query/:player`, function (req, res) { urlHandle_manage_query(req, res, idx) });
+    mApp.post(`${url}/manage/list`, function (req, res) { urlHandle_manage_list(req, res, idx) });
+    mApp.post(`${url}/manage/modify/:player`, function (req, res) { urlHandle_manage_modify(req, res, idx) });
+    mApp.post(`${url}/manage/delete/:player`, function (req, res) { urlHandle_manage_delete(req, res, idx) });
 
 }
 // 皮肤站处理开始
@@ -661,16 +667,39 @@ function urlHandle_manage_delete(req, res, from) {
 app.get('/', function (req, res) {
     res.sendFile(__dirname + "/web/public/" + "index.html");
 })
-app.get('/manage', function (req, res) {
+// 管理界面和管理API注册到 manageApp（独立管理服务器）或 app（主服务器）
+let uiApp = manageApp || app;
+uiApp.get(manageUrl, function (req, res) {
     res.sendFile(__dirname + "/web/public/" + "manage.html");
 })
-app.get('/api/methods', function (req, res) {
+uiApp.get('/api/methods', function (req, res) {
     let methods = HANDLES.map((handle, idx) => ({
         url: handle.url,
         name: handle.name || 'default'
     }));
     res.send(methods).end();
 })
+// 如果启用了独立管理服务器，为其添加 favicon 和 404 处理
+if (manageApp) {
+    manageApp.get('/', function (req, res) {
+        res.sendFile(__dirname + "/web/public/" + "index.html");
+    })
+    manageApp.get("/favicon.ico", function (req, res) { res.end() })
+    manageApp.get('*', function (req, res) {
+        log("[UNKNOWN] " + (req.ip) + " -> " + req.url);
+        res.sendFile(__dirname + '/web/public/404.html');
+    });
+    manageApp.post("*", function (req, res) {
+        log("[UNKNOWN] " + (req.ip) + " -> " + req.url);
+        res.sendFile(__dirname + '/web/public/404.html');
+    })
+    manageApp.use((err, req, res, next) => {
+        console.error(err.stack);
+        let errInfo = err.message;
+        res.type('text/plain');
+        res.status(500).send(JSON.stringify({ "code": 500, "msg": "Something went error.", "details": errInfo }));
+    });
+}
 app.get("/favicon.ico", function (req, res) { res.end() })
 
 app.get('*', function (req, res) {
@@ -697,6 +726,10 @@ app.use((err, req, res, next) => {
 reloadConfig();
 server = app.listen(port);
 log(`Server is listening to ${port} port.`);
+if (manageApp) {
+    manageServer = manageApp.listen(managePort);
+    log(`Management server is listening to ${managePort} port.`);
+}
 
 function reloadConfig() {
     log("Loading the config ...")
@@ -712,12 +745,20 @@ function reloadConfig() {
     }
     // log()
     port = globleConfig.get("port", 25600); // 8123
+    managePort = globleConfig.get("manage_port", 0);
     if (server == null) return;
     // console.log(port)
     server.listen(port);            // 在端口运行它
     // port = server.address().port;
     log(`Server is listening to ${port} port.`);
     // log(`IP: 0.0.0.0:${port}`);
+
+    // 重启管理服务器（如已启用）
+    if (manageServer != null && managePort > 0) {
+        manageServer.close();
+        manageServer.listen(managePort);
+        log(`Management server is listening to ${managePort} port.`);
+    }
 
     // Node使用'on'方法注册事件处理程序
     // 当服务器收到新请求,则运行函数处理它
@@ -739,6 +780,7 @@ function runCommand() {
         } else if (name == 'stop') {
             try {
                 server.close();
+                if (manageServer) manageServer.close();
             }
             catch (e) {
                 console.error(e);

@@ -1,5 +1,7 @@
 {
     "port": 25600,
+    "manage_port": 25601,
+    "manage_url": "/manage",
     "log_remaining_number": 5,
     "skinDomains": [
         "littleskin.cn"
