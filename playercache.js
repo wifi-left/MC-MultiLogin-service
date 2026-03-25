@@ -155,6 +155,17 @@ function class_PlayerCache(path) {
         return false;
 
     }
+    this.find_available_name = function (player) {
+        let i = 2;
+        while (i <= 9999) {
+            let candidate = player + "_" + i;
+            if (!fs.existsSync(this.path + "/" + candidate + ".json")) {
+                return candidate;
+            }
+            i++;
+        }
+        return null;
+    }
     this.list_players = function () {
         try {
             let files = fs.readdirSync(this.path);

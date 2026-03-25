@@ -10,6 +10,8 @@
 3. 玩家缓存。玩家信息会缓存到 `cache` 文件夹中。如果想删除某个名字的信息，请删除对应JSON即可，无需重启。此操作可以解决第一个feature中使用错误的方式登录导致后续无法登录的后果。
 4. 强制部分玩家使用指定皮肤站登录。
 5. 玩家改名跟踪。此特性未经测试，可能存在BUG。
+6. `detail=true` 详细错误返回。当请求携带此参数时，登录失败会返回含具体原因的 JSON 错误体（HTTP 403）而非无内容的 204，并在玩家名冲突时附带可用的替代名（`availableId`）。便于配套 Mod 向玩家展示可读的错误提示。
+7. 可配置错误文本。通过 `errorMessages` 配置项自定义 `detail=true` 时返回的各类错误信息，支持 `{from}`、`{name}` 等占位符。
 
 ## 如何使用
 
@@ -51,6 +53,8 @@ npm install
 ```
 
 上述示例会要求名叫 `hypixel` 的玩家必须从 `original` 进入，名叫 `Dream` 必须从 `littleskin` 进入。
+
+- `errorMessages`: 自定义 `detail=true` 时返回的错误文本。详见 [errorMessages 子配置章节](#errorMessages-子配置)。此项为可选，不配置时使用内置中文默认文本。
   
 ### API子配置
 
@@ -112,3 +116,54 @@ npm install
 - `POST {url}/ban/name/{name}/{time}` — 按名称封禁
 
 管理面板网页：`http://域名:manage_port{manage_url}`（默认 `/manage`）
+
+### detail 错误详情参数
+
+在 `hasJoined` 请求中携带 `detail=true` 查询参数（由配套 Mod 发送），服务端会在登录失败时返回 **HTTP 403** 及 JSON 错误体，而非标准的 HTTP 204（无正文）。
+
+**示例请求（Mod 侧）：**
+```
+GET /sessionserver/session/minecraft/hasJoined?username=Steve&serverId=xxx&detail=true
+```
+
+**错误响应格式：**
+```json
+{
+    "error": "ForbiddenOperationException",
+    "errorMessage": "该玩家名已被来自 \"littleskin\" 的账号占用，不允许其他皮肤站的同名玩家登录",
+    "cause": "DUPLICATE_NAME",
+    "availableId": "Steve_2"
+}
+```
+
+| `cause` 值 | 含义 | 是否含 `availableId` |
+|---|---|---|
+| `DUPLICATE_NAME` | 玩家名已被其他皮肤站占用 | ✅ |
+| `DUPLICATE_UUID` | UUID 与已有玩家冲突 | ❌ |
+| `BANNED_FOREVER` | 玩家已被永久封禁 | ❌ |
+| `BANNED` | 玩家已被临时封禁 | ❌ |
+| `NOT_FOUND` | 未在任何皮肤站找到该玩家 | ❌ |
+| `UNSUPPORTED_SKIN_SITE` | 玩家注册的皮肤站不在支持列表中 | ❌ |
+| `FETCH_ERROR` | 连接上游验证服务器失败 | ❌ |
+
+`availableId` 为服务端建议的可用替代玩家名（格式为 `原名_2`、`原名_3` 等），仅在 `DUPLICATE_NAME` 时出现。
+
+### errorMessages 子配置
+
+可在 `config.json` 中添加 `errorMessages` 字段，自定义 `detail=true` 时返回的错误文本。未配置的字段会使用默认中文文本。
+
+支持以下占位符：
+- `{from}` — 冲突来源皮肤站 ID
+- `{name}` — 冲突玩家名（仅 `DUPLICATE_UUID`）
+
+```json
+"errorMessages": {
+    "DUPLICATE_NAME": "该玩家名已被来自 \"{from}\" 的账号占用，不允许其他皮肤站的同名玩家登录",
+    "DUPLICATE_UUID": "该账号的 UUID 与已有玩家 \"{name}\"（来自 \"{from}\"）冲突",
+    "BANNED_FOREVER": "您已被永久封禁",
+    "BANNED": "您已被封禁",
+    "NOT_FOUND": "玩家未在任何已配置的皮肤站找到",
+    "UNSUPPORTED_SKIN_SITE": "该玩家注册的皮肤站不在此服务器支持列表中",
+    "FETCH_ERROR": "连接验证服务器失败"
+}
+```
