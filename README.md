@@ -32,6 +32,8 @@ npm install
 ### 详细解释
 
 - `port`: 如字面意思，端口
+- `manage_port`: 管理服务器的端口。若设置此项，管理API（封禁、查询、修改、删除玩家缓存）和管理面板将运行在此独立端口上，与 Minecraft 登录 API 端口分离。**建议设置此项**，避免管理接口暴露到对外的 API 端口。若不设置，管理路由仍挂载在主端口上（向后兼容）。
+- `manage_url`: 管理面板网页的访问路径，默认为 `/manage`。例如设置为 `/admin` 后，可通过 `http://域名:manage_port/admin` 访问管理界面。
 - `log_remaining_number`: 历史日志保留个数。如果不想保留请设置为 -1。
 - `skinDomains`: 就是皮肤站 `api/yggdrasil` 的 skinDomains，可以随便改，建议加上所有可能出现的皮肤域名。（比如`littleskin.cn`）
 - `apis`: API配置。详见[API子配置章节](#API子配置)
@@ -80,11 +82,15 @@ npm install
 ### method子配置
 
 - `url`: 用于监视的地址。比如使用 `/login` 后，authlib-injector所指向的地址就是 `http://域名:端口/login`
-- `handles`: 用于推测玩家来源的顺序。如果该玩家没有加入过服务器（也就是没有缓存文件），会按照此列表顺序进行推测。该项目为一个JSON数组，内容为API配置的ID大小写敏感）。如：
+- `name`: 此登录方式的名称，用于缓存目录命名及管理面板显示。
+- `secret`: 管理API的密钥。调用封禁、查询、修改等管理接口时需要在请求体中携带此密钥。
+- `handles`: 用于推测玩家来源的顺序。如果该玩家没有加入过服务器（也就是没有缓存文件），会按照此列表顺序进行推测。该项目为一个JSON数组，内容为API配置的ID（大小写敏感）。如：
 
 ```json
 {
     "url": "/login",
+    "name": "myserver",
+    "secret": "your_secret_key_here",
     "handles": [
         "littleskin",
         "original"
@@ -93,3 +99,16 @@ npm install
 ```
 
 该示例会先在littleskin找寻玩家信息，再从original找寻信息。
+
+### 管理API
+
+启用 `manage_port` 后，以下管理端点仅在管理端口可用：
+
+- `POST {url}/manage/query/{player}` — 查询玩家缓存（请求体：`{"secret": "..."}`）
+- `POST {url}/manage/list` — 列出所有缓存玩家
+- `POST {url}/manage/modify/{player}` — 修改玩家缓存（请求体：`{"secret": "...", "playerData": {...}}`）
+- `POST {url}/manage/delete/{player}` — 删除玩家缓存
+- `POST {url}/ban/uuid/{uuid}/{time}` — 按UUID封禁（0=永久，-1=解封，正整数=毫秒时长）
+- `POST {url}/ban/name/{name}/{time}` — 按名称封禁
+
+管理面板网页：`http://域名:manage_port{manage_url}`（默认 `/manage`）
