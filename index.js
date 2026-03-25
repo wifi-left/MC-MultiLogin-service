@@ -62,12 +62,75 @@ for (let i = 0; i < HANDLES.length; i++) {
 
 }
 // 皮肤站处理开始
-function trySavePlayer(player, api, response_data, res, from) {
+var ErrorMessages = globleConfig.get("errorMessages", {});
+function getMsg(key, vars) {
+    const defaults = {
+        "DUPLICATE_NAME": '该玩家名已被来自 "{from}" 的账号占用，不允许其他皮肤站的同名玩家登录',
+        "DUPLICATE_UUID": '该账号的 UUID 与已有玩家 "{name}"（来自 "{from}"）冲突',
+        "BANNED_FOREVER": "您已被永久封禁",
+        "BANNED": "您已被封禁",
+        "NOT_FOUND": "玩家未在任何已配置的皮肤站找到",
+        "UNSUPPORTED_SKIN_SITE": "该玩家注册的皮肤站不在此服务器支持列表中",
+        "FETCH_ERROR": "连接验证服务器失败"
+    };
+    let msg = (ErrorMessages[key] !== undefined) ? ErrorMessages[key] : (defaults[key] || key);
+    if (vars) {
+        for (let k of Object.keys(vars)) {
+            msg = msg.replace(new RegExp("\\{" + k + "\\}", "g"), vars[k] != null ? vars[k] : "");
+        }
+    }
+    return msg;
+}
+function detailReject(res, detail, cause, message) {
+    if (detail) {
+        res.status(403).send({
+            "error": "ForbiddenOperationException",
+            "errorMessage": message,
+            "cause": cause
+        }).end();
+    } else {
+        res.status(204).end();
+    }
+}
+function buildDetailError(k, cache, playerName) {
+    if (k.error === "DUPLICATE_NAME") {
+        let body = {
+            "error": "ForbiddenOperationException",
+            "errorMessage": getMsg("DUPLICATE_NAME", { from: k.existingFrom }),
+            "cause": "DUPLICATE_NAME"
+        };
+        if (cache && playerName) {
+            let availableId = cache.find_available_name(playerName);
+            if (availableId) body.availableId = availableId;
+        }
+        return body;
+    }
+    if (k.error === "DUPLICATE_UUID") {
+        return {
+            "error": "ForbiddenOperationException",
+            "errorMessage": getMsg("DUPLICATE_UUID", { name: k.existingName, from: k.existingFrom }),
+            "cause": "DUPLICATE_UUID"
+        };
+    }
+    return {
+        "error": "ForbiddenOperationException",
+        "errorMessage": getMsg(k.error || "UNKNOWN", {}),
+        "cause": k.error || "UNKNOWN"
+    };
+}
+function trySavePlayer(player, api, response_data, res, from, detail) {
     log("[FOUND] Found <" + player + "> should come from <" + api.name + ">");
     let dat = response_data;
     let k = PlayerCaches[from].add(dat.name, dat.id, api.id);
-    if (k == false) res.status(204).end()
-    else res.send(response_data).end();
+    if (k !== true) {
+        if (detail && k && k.error) {
+            res.status(403).send(buildDetailError(k, PlayerCaches[from], dat.name)).end();
+        } else {
+            res.status(204).end();
+        }
+    } else {
+        res.send(response_data).end();
+    }
 
 }
 function urlHandle_root(req, res, from) {
@@ -79,9 +142,9 @@ function urlHandle_root(req, res, from) {
         "skinDomains": SkinDomains
     }).end();
 }
-function fetchPlayerInfo_step(args, apis, res, player, from) {
+function fetchPlayerInfo_step(args, apis, res, player, from, detail) {
     if (apis.length <= 0) {
-        res.status(204).end();
+        detailReject(res, detail, "NOT_FOUND", getMsg("NOT_FOUND", {}));
         log(`${player} not found in the remote server.`);
         return;
     }
@@ -99,12 +162,12 @@ function fetchPlayerInfo_step(args, apis, res, player, from) {
             return data.json()
         }
         ).then(data => {
-            trySavePlayer(player, api, data, res, from);
+            trySavePlayer(player, api, data, res, from, detail);
         }).catch(e => {
             // console.error(e);
             // res.status(204).end();
             // 寻找下一个
-            fetchPlayerInfo_step(args, b, res, player, from);
+            fetchPlayerInfo_step(args, b, res, player, from, detail);
         })
 
     } else {
@@ -116,12 +179,12 @@ function fetchPlayerInfo_step(args, apis, res, player, from) {
             return data.json()
         }).then(data => {
             // 记录了
-            trySavePlayer(player, api, data, res, from);
+            trySavePlayer(player, api, data, res, from, detail);
         }).catch(e => {
             // console.error(e);
             // res.status(204).end();
             // 寻找下一个
-            fetchPlayerInfo_step(args, b, res, player, from);
+            fetchPlayerInfo_step(args, b, res, player, from, detail);
         })
     }
 }
@@ -137,6 +200,7 @@ function urlHandle_joinServer(req, res, from) {
     let profile_name = username;
     let serverId = req.query.serverId;
     let ip = req.query.ip;
+    let detail = req.query.detail === 'true';
     let ipdisplay = ip + "";
     if (ip == undefined) ipdisplay = "Unknown"
     if (username == null || serverId == null || serverId == "" || username == "") {
@@ -148,7 +212,7 @@ function urlHandle_joinServer(req, res, from) {
     if (info.ban == true) {
         if (info.banTime == 0) {
             console.log("Player was forever banned.")
-            res.status(204).end();
+            detailReject(res, detail, "BANNED_FOREVER", getMsg("BANNED_FOREVER", {}));
             return;
         }
         else if (info.banTime <= new Date().getTime()) {
@@ -157,7 +221,7 @@ function urlHandle_joinServer(req, res, from) {
             console.log("<" + username + "> was unbanned (Timeout).")
         } else {
             console.log("Player was banned.")
-            res.status(204).end();
+            detailReject(res, detail, "BANNED", getMsg("BANNED", {}));
             return;
         }
     }
@@ -169,7 +233,7 @@ function urlHandle_joinServer(req, res, from) {
     if (api == null) {
         console.log("Looking up for " + profile_name + " but not found. Try to search for it.");
         let newH = JSON.parse(JSON.stringify(handle.handles))
-        fetchPlayerInfo_step(`?username=${encodeURI(username)}&serverId=${serverId}${ip == null ? "" : `&ip=${ip}`}`, newH, res, username, from);
+        fetchPlayerInfo_step(`?username=${encodeURI(username)}&serverId=${serverId}${ip == null ? "" : `&ip=${ip}`}`, newH, res, username, from, detail);
     } else {
         if (handle.handles.includes(api.id)) {
             if (api.id == 'original') {
@@ -187,7 +251,7 @@ function urlHandle_joinServer(req, res, from) {
                     res.send(data).end();
                 }).catch(e => {
                     console.error(e);
-                    res.status(204).end();
+                    detailReject(res, detail, "FETCH_ERROR", getMsg("FETCH_ERROR", {}));
                 })
 
             } else {
@@ -203,12 +267,12 @@ function urlHandle_joinServer(req, res, from) {
                     res.send(data).end();
                 }).catch(e => {
                     console.error(e);
-                    res.status(204).end();
+                    detailReject(res, detail, "FETCH_ERROR", getMsg("FETCH_ERROR", {}));
                 })
             }
         } else {
             console.log("The player used unsupported skin site <" + api.name + ">")
-            res.status(204).end();
+            detailReject(res, detail, "UNSUPPORTED_SKIN_SITE", getMsg("UNSUPPORTED_SKIN_SITE", {}));
         }
 
     }
