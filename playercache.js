@@ -2,8 +2,6 @@ const fs = require('fs');
 
 const { log } = require('./utils.js');
 
-var UUIDCache = {};
-
 function checkName(name) {
     if (name == null || name == "") return false;
 
@@ -21,13 +19,14 @@ function checkName(name) {
 }
 function class_PlayerCache(path) {
     this.path = path;
+    this.UUIDCache = {};
     this.lookup_uuid = function (uuid) {
-        return UUIDCache[uuid];
+        return this.UUIDCache[uuid];
     }
     this.cacheUUID = function (player, uuid) {
-        UUIDCache[player] = uuid;
+        this.UUIDCache[uuid] = player;
         try {
-            fs.writeFileSync(this.path + "/ud.json", JSON.stringify(UUIDCache, null, 0));
+            fs.writeFileSync(this.path + "/ud.json", JSON.stringify(this.UUIDCache, null, 0));
         } catch (e) {
             console.error(e);
         }
@@ -153,20 +152,19 @@ function class_PlayerCache(path) {
 
     }
     if (!fs.existsSync(path)) {
-        fs.mkdirSync(path);
+        fs.mkdirSync(path, { recursive: true });
     }
     try {
         if (fs.existsSync(path + "/ud.json")) {
-            UUIDCache = JSON.parse(fs.readFileSync(path + "/ud.json"));
+            this.UUIDCache = JSON.parse(fs.readFileSync(path + "/ud.json"));
         } else {
-            UUIDCache = {};
+            this.UUIDCache = {};
         }
     } catch (e) {
         console.error(e);
-        UUIDCache = {};
+        this.UUIDCache = {};
     }
 }
-const PlayerCache = new class_PlayerCache("./cache/");
 module.exports = {
-    PlayerCache, checkName, log
+    class_PlayerCache, checkName, log
 }

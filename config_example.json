@@ -19,6 +19,8 @@
     "method": [
         {
             "url": "/login/my",
+            "name": "myserver",
+            "secret": "your_secret_key_here",
             "handles": [
                 "littleskin",
                 "original"

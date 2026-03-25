@@ -2,7 +2,7 @@ const path = require("path");
 const http = require('http');        // HTTP服务器API
 const fs = require('fs');            // 文件系统API
 const express = require('express');
-const { PlayerCache, checkName } = require("./playercache.js");
+const { class_PlayerCache, checkName } = require("./playercache.js");
 const { log, globleConfig } = require('./utils.js');
 var app = express();    // 创建新的HTTP服务器
 var port = 0;
@@ -22,6 +22,7 @@ var URL_APIS = globleConfig.get("apis", {});
 var HANDLES = globleConfig.get("method", []);
 var SkinDomains = globleConfig.get("skinDomains", ["127.0.0.1"]);
 var DefaultSKINSITE = globleConfig.get("default", "original");
+var PlayerCaches = {};
 // HTML 开始处理
 // 注册URL
 if (HANDLES == null || HANDLES.length <= 0) {
@@ -32,7 +33,10 @@ if (HANDLES == null || HANDLES.length <= 0) {
 for (let i = 0; i < HANDLES.length; i++) {
     let url = HANDLES[i].url;
     let idx = i + 0;
-    console.log("Register url path: " + url);
+    let methodName = HANDLES[i].name || "default";
+    let cachePath = `./cache/${methodName}`;
+    PlayerCaches[idx] = new class_PlayerCache(cachePath);
+    console.log("Register url path: " + url + " with cache: " + cachePath);
     app.get(url, function (req, res) { urlHandle_root(req, res, idx) });
     app.post(`${url}/api/profiles/minecraft`, function (req, res) { urlHandle_profiles_post(req, res, idx) });
     app.get(`${url}/sessionserver/session/minecraft/hasJoined`, function (req, res) { urlHandle_joinServer(req, res, idx) });
@@ -40,12 +44,16 @@ for (let i = 0; i < HANDLES.length; i++) {
     app.get(`${url}/sessionserver/session/minecraft/profile/*`, function (req, res) { urlHandle_profiles(req, res, idx) })
     app.get(`${url}/api/minecraft/profile/lookup/name/*`, function (req, res) { urlHandle_profiles(req, res, idx) })
 
+    // Ban API endpoints
+    app.post(`${url}/ban/uuid/:uuid/:time`, function (req, res) { urlHandle_ban_uuid(req, res, idx) });
+    app.post(`${url}/ban/name/:name/:time`, function (req, res) { urlHandle_ban_name(req, res, idx) });
+
 }
 // 皮肤站处理开始
-function trySavePlayer(player, api, response_data, res) {
+function trySavePlayer(player, api, response_data, res, from) {
     log("[FOUND] Found <" + player + "> should come from <" + api.name + ">");
     let dat = response_data;
-    let k = PlayerCache.add(dat.name, dat.id, api.id);
+    let k = PlayerCaches[from].add(dat.name, dat.id, api.id);
     if (k == false) res.status(204).end()
     else res.send(response_data).end();
 
@@ -59,7 +67,7 @@ function urlHandle_root(req, res, from) {
         "skinDomains": SkinDomains
     }).end();
 }
-function fetchPlayerInfo_step(args, apis, res, player) {
+function fetchPlayerInfo_step(args, apis, res, player, from) {
     if (apis.length <= 0) {
         res.status(204).end();
         log(`${player} not found in the remote server.`);
@@ -79,12 +87,12 @@ function fetchPlayerInfo_step(args, apis, res, player) {
             return data.json()
         }
         ).then(data => {
-            trySavePlayer(player, api, data, res);
+            trySavePlayer(player, api, data, res, from);
         }).catch(e => {
             // console.error(e);
             // res.status(204).end();
             // 寻找下一个
-            fetchPlayerInfo_step(args, b, res, player);
+            fetchPlayerInfo_step(args, b, res, player, from);
         })
 
     } else {
@@ -96,12 +104,12 @@ function fetchPlayerInfo_step(args, apis, res, player) {
             return data.json()
         }).then(data => {
             // 记录了
-            trySavePlayer(player, api, data, res);
+            trySavePlayer(player, api, data, res, from);
         }).catch(e => {
             // console.error(e);
             // res.status(204).end();
             // 寻找下一个
-            fetchPlayerInfo_step(args, b, res, player);
+            fetchPlayerInfo_step(args, b, res, player, from);
         })
     }
 }
@@ -124,7 +132,7 @@ function urlHandle_joinServer(req, res, from) {
         return;
     }
     log('[JOIN] <' + username + "> want to join. IP: " + ipdisplay + "");
-    let info = PlayerCache.lookup(username);
+    let info = PlayerCaches[from].lookup(username);
     if (info.ban == true) {
         if (info.banTime == 0) {
             console.log("Player was forever banned.")
@@ -133,7 +141,7 @@ function urlHandle_joinServer(req, res, from) {
         }
         else if (info.banTime <= new Date().getTime()) {
             info.ban = false;
-            PlayerCache.new_ban(username, -1)
+            PlayerCaches[from].new_ban(username, -1)
             console.log("<" + username + "> was unbanned (Timeout).")
         } else {
             console.log("Player was banned.")
@@ -149,7 +157,7 @@ function urlHandle_joinServer(req, res, from) {
     if (api == null) {
         console.log("Looking up for " + profile_name + " but not found. Try to search for it.");
         let newH = JSON.parse(JSON.stringify(handle.handles))
-        fetchPlayerInfo_step(`?username=${encodeURI(username)}&serverId=${serverId}${ip == null ? "" : `&ip=${ip}`}`, newH, res, username);
+        fetchPlayerInfo_step(`?username=${encodeURI(username)}&serverId=${serverId}${ip == null ? "" : `&ip=${ip}`}`, newH, res, username, from);
     } else {
         if (handle.handles.includes(api.id)) {
             if (api.id == 'original') {
@@ -163,7 +171,7 @@ function urlHandle_joinServer(req, res, from) {
                 }
                 ).then(data => {
                     log('[JOIN] <' + username + "> was allowed to join from <" + api.name + ">");
-
+                    PlayerCaches[from].new_login(username, new Date().getTime(), ip);
                     res.send(data).end();
                 }).catch(e => {
                     console.error(e);
@@ -179,6 +187,7 @@ function urlHandle_joinServer(req, res, from) {
                     return data.text()
                 }).then(data => {
                     log('[JOIN] <' + username + "> was allowed to join from <" + api.name + ">");
+                    PlayerCaches[from].new_login(username, new Date().getTime(), ip);
                     res.send(data).end();
                 }).catch(e => {
                     console.error(e);
@@ -192,8 +201,8 @@ function urlHandle_joinServer(req, res, from) {
 
     }
 }
-function searchnameForUUID(uuid) {
-    return PlayerCache.lookup_uuid(uuid);
+function searchnameForUUID(uuid, from) {
+    return PlayerCaches[from].lookup_uuid(uuid);
 }
 function urlHandle_profiles(req, res, from) {
     // console.log('404 handler..')
@@ -205,7 +214,7 @@ function urlHandle_profiles(req, res, from) {
     if (uuid1.endsWith("?unsigned=false")) {
         uuid1 = uuid1.substring(0, uuid1.length - "?unsigned=false".length);
     }
-    let profile_name = searchnameForUUID(uuid1);
+    let profile_name = searchnameForUUID(uuid1, from);
 
     let info, api;
     if (!checkName(profile_name)) {
@@ -217,7 +226,7 @@ function urlHandle_profiles(req, res, from) {
         // res.status(204).end();
         api = lookupApi(DefaultSKINSITE);
     } else {
-        info = PlayerCache.lookup(profile_name);
+        info = PlayerCaches[from].lookup(profile_name);
         api = lookupApi(info.from);
     }
     if (PUSH_LOGINMETHOD_PLAYERS[profile_name] != undefined) {
@@ -304,7 +313,7 @@ function urlHandle_profiles_post(req, res, from) {
                 return;
             }
             for (let i = 0; i < 1; i++) {
-                let info = PlayerCache.lookup(bdy[i]);
+                let info = PlayerCaches[from].lookup(bdy[i]);
                 let api = lookupApi(info.from);
                 if (PUSH_LOGINMETHOD_PLAYERS[bdy[i]] != undefined) {
                     api = lookupApi(PUSH_LOGINMETHOD_PLAYERS[bdy[i]]);
@@ -368,6 +377,113 @@ function urlHandle_profiles_post(req, res, from) {
             }).end();
         }
         // 处理请求内容
+    });
+}
+
+function urlHandle_ban_uuid(req, res, from) {
+    let uuid = req.params.uuid;
+    let time = parseInt(req.params.time);
+    let handle = HANDLES[from];
+    let secret = handle.secret;
+
+    if (!secret) {
+        res.status(403).send({ "error": "Secret key not configured for this endpoint" }).end();
+        return;
+    }
+
+    let body = '';
+    req.on('data', (chunk) => {
+        body += chunk;
+    });
+
+    req.on('end', () => {
+        try {
+            let data = JSON.parse(body);
+            if (data.secret !== secret) {
+                res.status(403).send({ "error": "Invalid secret key" }).end();
+                return;
+            }
+
+            let playerName = PlayerCaches[from].lookup_uuid(uuid);
+            if (!playerName) {
+                res.status(404).send({ "error": "Player not found" }).end();
+                return;
+            }
+
+            let result;
+            if (time === 0) {
+                result = PlayerCaches[from].new_ban(playerName, 0);
+                log(`[BAN API] Permanently banned <${playerName}> (UUID: ${uuid})`);
+            } else if (time === -1) {
+                result = PlayerCaches[from].new_ban(playerName, -1);
+                log(`[BAN API] Unbanned <${playerName}> (UUID: ${uuid})`);
+            } else {
+                result = PlayerCaches[from].new_ban(playerName, time);
+                log(`[BAN API] Temporarily banned <${playerName}> (UUID: ${uuid}) for ${time}ms`);
+            }
+
+            if (result) {
+                res.send({ "success": true, "player": playerName, "uuid": uuid }).end();
+            } else {
+                res.status(500).send({ "error": "Failed to apply ban" }).end();
+            }
+        } catch (e) {
+            console.error(e);
+            res.status(400).send({ "error": "Invalid request" }).end();
+        }
+    });
+}
+
+function urlHandle_ban_name(req, res, from) {
+    let playerName = req.params.name;
+    let time = parseInt(req.params.time);
+    let handle = HANDLES[from];
+    let secret = handle.secret;
+
+    if (!secret) {
+        res.status(403).send({ "error": "Secret key not configured for this endpoint" }).end();
+        return;
+    }
+
+    let body = '';
+    req.on('data', (chunk) => {
+        body += chunk;
+    });
+
+    req.on('end', () => {
+        try {
+            let data = JSON.parse(body);
+            if (data.secret !== secret) {
+                res.status(403).send({ "error": "Invalid secret key" }).end();
+                return;
+            }
+
+            if (!checkName(playerName)) {
+                res.status(400).send({ "error": "Invalid player name" }).end();
+                return;
+            }
+
+            let result;
+            if (time === 0) {
+                result = PlayerCaches[from].new_ban(playerName, 0);
+                log(`[BAN API] Permanently banned <${playerName}>`);
+            } else if (time === -1) {
+                result = PlayerCaches[from].new_ban(playerName, -1);
+                log(`[BAN API] Unbanned <${playerName}>`);
+            } else {
+                result = PlayerCaches[from].new_ban(playerName, time);
+                log(`[BAN API] Temporarily banned <${playerName}> for ${time}ms`);
+            }
+
+            if (result) {
+                res.send({ "success": true, "player": playerName }).end();
+            } else {
+                res.status(404).send({ "error": "Player not found in cache" }).end();
+            }
+        } catch (e) {
+            console.error(e);
+            res.status(400).send({ "error": "Invalid request" }).end();
+        }
     });
 }
 
@@ -461,8 +577,14 @@ function runCommand() {
             if (args.length >= 3) {
                 let player = args[1];
                 let time = args[2];
-                let res = PlayerCache.new_ban(player, parseInt(time));
-                if (res) {
+                let banned = false;
+                for (let idx in PlayerCaches) {
+                    let res = PlayerCaches[idx].new_ban(player, parseInt(time));
+                    if (res) {
+                        banned = true;
+                    }
+                }
+                if (banned) {
                     log("已封禁 " + player + "，时长：" + time + "ms，解封时间：" + new Date(new Date().getTime() + parseInt(time)))
                 } else {
                     log("无法封禁 <" + player + ">，他可能没有登陆过服务器。")
