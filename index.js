@@ -17,7 +17,7 @@ const readline = require('readline').createInterface({
 })
 
 
-var PUSH_LOGINMETHOD_PLAYERS = globleConfig.get("push", { "handles": [] }).handles;
+var PUSH_LOGINMETHOD_PLAYERS = globleConfig.get("push", { "handles": {} }).handles;
 var URL_APIS = globleConfig.get("apis", {});
 var HANDLES = globleConfig.get("method", []);
 var SkinDomains = globleConfig.get("skinDomains", ["127.0.0.1"]);
@@ -72,7 +72,7 @@ function getMsg(key, vars) {
         "NOT_FOUND": "玩家未在任何已配置的皮肤站找到",
         "UNSUPPORTED_SKIN_SITE": "该玩家注册的皮肤站不在此服务器支持列表中",
         "FETCH_ERROR": "连接验证服务器失败",
-        "VERIFY_FAILED": "验证失败，你应当从 {url} 进入"
+        "VERIFY_FAILED": "验证失败，你应当通过 {name} 进入"
     };
     let msg = (ErrorMessages[key] !== undefined) ? ErrorMessages[key] : (defaults[key] || key);
     if (vars) {
@@ -243,7 +243,7 @@ function urlHandle_joinServer(req, res, from) {
                 Fetch(`https://sessionserver.mojang.com/session/minecraft/hasJoined?username=${encodeURI(username)}&serverId=${serverId}${ip == null ? "" : `&ip=${ip}`}`).then(data => {
                     if (data.status == 204) {
                         console.log(`<${username}> was not found.`);
-                        detailReject(res, detail, "VERIFY_FAILED", getMsg("VERIFY_FAILED", { url: api.root || api.name }));
+                        detailReject(res, detail, "VERIFY_FAILED", getMsg("VERIFY_FAILED", { name: api.name }));
                         throw "NOT_FOUND";
                     }
                     res.status(data.status);
@@ -264,7 +264,7 @@ function urlHandle_joinServer(req, res, from) {
                 Fetch(api.root + `/sessionserver/session/minecraft/hasJoined?username=${encodeURI(username)}&serverId=${serverId}${ip == null ? "" : `&ip=${ip}`}`).then(data => {
                     if (data.status == 204) {
                         console.log(`<${username}> was not found.`);
-                        detailReject(res, detail, "VERIFY_FAILED", getMsg("VERIFY_FAILED", { url: api.root || api.name }));
+                        detailReject(res, detail, "VERIFY_FAILED", getMsg("VERIFY_FAILED", { name: api.name }));
                         throw "NOT_FOUND";
                     }
                     res.status(data.status);
