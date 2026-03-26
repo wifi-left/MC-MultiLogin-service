@@ -252,8 +252,9 @@ function urlHandle_joinServer(req, res, from) {
                 ).then(data => {
                     log('[JOIN] <' + username + "> was allowed to join from <" + api.name + ">");
                     if (!PlayerCaches[from].lookup(username)) {
-                        PlayerCaches[from].add(data.name, data.id, api.id);
+                        trySavePlayer(username, api, data, res, from, detail);
                     }
+
                     PlayerCaches[from].new_login(username, new Date().getTime(), ip);
                     res.send(data).end();
                 }).catch(e => {
