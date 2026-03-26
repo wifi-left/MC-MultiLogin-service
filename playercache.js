@@ -89,7 +89,6 @@ function class_PlayerCache(path) {
     this.add = function (player, uuid, from) {
         let t = this.lookup_uuid(uuid);
         if (t == undefined) {
-
             return this.add_raw(player, {
                 "name": player,
                 "uuid": uuid,
