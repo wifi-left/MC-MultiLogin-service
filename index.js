@@ -63,6 +63,7 @@ for (let i = 0; i < HANDLES.length; i++) {
 }
 // 皮肤站处理开始
 var ErrorMessages = globleConfig.get("errorMessages", {});
+var loginCooldownTime = globleConfig.get("login_cooldown", 5000);
 function getMsg(key, vars) {
     const defaults = {
         "DUPLICATE_NAME": '该玩家名已被来自 "{from}" 的账号占用，不允许其他皮肤站的同名玩家登录',
@@ -147,6 +148,11 @@ function fetchPlayerInfo_step(args, apis, res, player, from, detail) {
     if (apis.length <= 0) {
         detailReject(res, detail, "NOT_FOUND", getMsg("NOT_FOUND", {}));
         log(`${player} not found in the remote server.`);
+        try {
+            delete pending_players[player];
+        } catch (e) {
+            log(e);
+        }
         return;
     }
     let a = apis[0];
@@ -164,6 +170,11 @@ function fetchPlayerInfo_step(args, apis, res, player, from, detail) {
         }
         ).then(data => {
             trySavePlayer(player, api, data, res, from, detail);
+            try {
+                delete pending_players[player];
+            } catch (e) {
+                log(e);
+            }
         }).catch(e => {
             // console.error(e);
             // res.status(204).end();
@@ -180,6 +191,11 @@ function fetchPlayerInfo_step(args, apis, res, player, from, detail) {
             return data.json()
         }).then(data => {
             // 记录了
+            try {
+                delete pending_players[player];
+            } catch (e) {
+                log(e);
+            }
             trySavePlayer(player, api, data, res, from, detail);
         }).catch(e => {
             // console.error(e);
@@ -189,6 +205,7 @@ function fetchPlayerInfo_step(args, apis, res, player, from, detail) {
         })
     }
 }
+const pending_players = {};
 function urlHandle_joinServer(req, res, from) {
     // console.log('404 handler..')
     // console.log(req.url);
@@ -210,7 +227,20 @@ function urlHandle_joinServer(req, res, from) {
     }
     log('[JOIN] <' + username + "> want to join. IP: " + ipdisplay + "");
     let info = PlayerCaches[from].lookup(username);
+    if (pending_players[username] === true) {
+        detailReject(res, detail, "LOGIN_TOO_FAST", getMsg("LOGIN_TOO_FAST", {}));
+        return;
+    }
     if (info) {
+        if (info.lastLogin) {
+            let lastLoginTime = parseInt(info.lastLogin);
+            if (!isNaN(lastLoginTime)) {
+                if (new Date().getTime() - lastLoginTime < loginCooldownTime) {
+                    detailReject(res, detail, "LOGIN_TOO_FAST", getMsg("LOGIN_TOO_FAST", {}));
+                    return;
+                }
+            }
+        }
         if (info.ban == true) {
             if (info.banTime == 0) {
                 console.log("Player was forever banned.")
@@ -235,6 +265,7 @@ function urlHandle_joinServer(req, res, from) {
     }
     if (api == null) {
         console.log("Looking up for " + profile_name + " but not found. Try to search for it.");
+        pending_players[profile_name] = true;
         let newH = JSON.parse(JSON.stringify(handle.handles))
         fetchPlayerInfo_step(`?username=${encodeURI(username)}&serverId=${serverId}${ip == null ? "" : `&ip=${ip}`}`, newH, res, username, from, detail);
     } else {
@@ -841,7 +872,7 @@ function reloadConfig() {
         manageServer.listen(managePort);
         log(`Management server is listening to ${managePort} port.`);
     }
-
+    loginCooldownTime = globleConfig.get("login_cooldown", 5000);
     // Node使用'on'方法注册事件处理程序
     // 当服务器收到新请求,则运行函数处理它
 
