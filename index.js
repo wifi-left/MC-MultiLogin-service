@@ -247,10 +247,13 @@ function urlHandle_joinServer(req, res, from) {
                         throw "NOT_FOUND";
                     }
                     res.status(data.status);
-                    return data.text()
+                    return data.json()
                 }
                 ).then(data => {
                     log('[JOIN] <' + username + "> was allowed to join from <" + api.name + ">");
+                    if (!PlayerCaches[from].lookup(username)) {
+                        PlayerCaches[from].add(data.name, data.id, api.id);
+                    }
                     PlayerCaches[from].new_login(username, new Date().getTime(), ip);
                     res.send(data).end();
                 }).catch(e => {
@@ -268,9 +271,12 @@ function urlHandle_joinServer(req, res, from) {
                         throw "NOT_FOUND";
                     }
                     res.status(data.status);
-                    return data.text()
+                    return data.json()
                 }).then(data => {
                     log('[JOIN] <' + username + "> was allowed to join from <" + api.name + ">");
+                    if (!PlayerCaches[from].lookup(username)) {
+                        PlayerCaches[from].add(data.name, data.id, api.id);
+                    }
                     PlayerCaches[from].new_login(username, new Date().getTime(), ip);
                     res.send(data).end();
                 }).catch(e => {
