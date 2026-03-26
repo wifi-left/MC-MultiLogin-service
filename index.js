@@ -131,8 +131,8 @@ function trySavePlayer(player, api, response_data, res, from, detail) {
         }
     } else {
         res.send(response_data).end();
+        PlayerCaches[from].new_login(player, new Date().getTime(), null);
     }
-
 }
 function urlHandle_root(req, res, from) {
     // console.log('404 handler..')
@@ -253,9 +253,9 @@ function urlHandle_joinServer(req, res, from) {
                     log('[JOIN] <' + username + "> was allowed to join from <" + api.name + ">");
                     if (!PlayerCaches[from].lookup(username)) {
                         trySavePlayer(username, api, data, res, from, detail);
+                    } else {
+                        PlayerCaches[from].new_login(username, new Date().getTime(), ip);
                     }
-
-                    PlayerCaches[from].new_login(username, new Date().getTime(), ip);
                     res.send(data).end();
                 }).catch(e => {
                     if (e !== "NOT_FOUND") {
@@ -276,9 +276,10 @@ function urlHandle_joinServer(req, res, from) {
                 }).then(data => {
                     log('[JOIN] <' + username + "> was allowed to join from <" + api.name + ">");
                     if (!PlayerCaches[from].lookup(username)) {
-                        PlayerCaches[from].add(data.name, data.id, api.id);
+                        trySavePlayer(username, api, data, res, from, detail);
+                    } else {
+                        PlayerCaches[from].new_login(username, new Date().getTime(), ip);
                     }
-                    PlayerCaches[from].new_login(username, new Date().getTime(), ip);
                     res.send(data).end();
                 }).catch(e => {
                     if (e !== "NOT_FOUND") {

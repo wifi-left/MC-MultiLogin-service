@@ -215,6 +215,33 @@
             color: #555;
             font-size: 14px;
         }
+
+        .query-actions {
+            margin-top: 10px;
+            display: flex;
+            gap: 10px;
+        }
+
+        .parsed-table {
+            width: 100%;
+            border-collapse: collapse;
+            background: #fff;
+            margin-top: 12px;
+        }
+
+        .parsed-table th,
+        .parsed-table td {
+            border: 1px solid #ddd;
+            padding: 8px 10px;
+            text-align: left;
+            vertical-align: top;
+        }
+
+        .parsed-table th {
+            width: 180px;
+            background: #f7f7f7;
+            color: #333;
+        }
     </style>
 </head>
 
@@ -275,7 +302,15 @@
                 <input type="text" id="queryPlayerName" placeholder="输入玩家名称">
             </div>
             <button onclick="queryPlayer()">查询</button>
+            <div class="query-actions">
+                <button class="secondary" id="jumpToModifyBtn" onclick="jumpToModifyFromQuery()" disabled>跳转到修改界面</button>
+            </div>
             <div id="queryResult" class="result"></div>
+
+            <h3>解析结果</h3>
+            <div id="queryParsedWrap"></div>
+
+            <h3>原始返回</h3>
             <pre id="queryData"></pre>
         </div>
     </div>
@@ -552,13 +587,73 @@
                 const result = await response.json();
                 if (result.success) {
                     document.getElementById('queryData').textContent = JSON.stringify(result.data, null, 2);
+                    renderParsedPlayerData(result.data);
+
+                    lastQueriedPlayerData = result.data;
+                    lastQueriedPlayerName = playerName;
+                    document.getElementById('jumpToModifyBtn').disabled = false;
+
                     showResult('查询成功', true, 'queryResult');
                 } else {
+                    document.getElementById('queryData').textContent = '';
+                    renderParsedPlayerData(null);
+                    lastQueriedPlayerData = null;
+                    lastQueriedPlayerName = '';
+                    document.getElementById('jumpToModifyBtn').disabled = true;
+
                     showResult(result.error || '查询失败', false, 'queryResult');
                 }
             } catch (e) {
                 showResult('请求失败: ' + e.message, false, 'queryResult');
             }
+        }
+
+        function jumpToModifyFromQuery() {
+            if (!lastQueriedPlayerData || !lastQueriedPlayerName) {
+                showResult('请先查询玩家', false, 'queryResult');
+                return;
+            }
+
+            document.getElementById('modifyPlayerName').value = lastQueriedPlayerName;
+            document.getElementById('modifyPlayerData').value = JSON.stringify(lastQueriedPlayerData, null, 2);
+            switchTabByName('modify');
+        }
+
+        function formatTimestamp(ms) {
+            const n = Number(ms);
+            if (!Number.isFinite(n) || n <= 0) return '无';
+            const d = new Date(n);
+            if (Number.isNaN(d.getTime())) return String(ms);
+            return d.toLocaleString('zh-CN', { hour12: false });
+        }
+
+        function formatIsoTime(value) {
+            if (!value) return '无';
+            const d = new Date(value);
+            if (Number.isNaN(d.getTime())) return String(value);
+            return d.toLocaleString('zh-CN', { hour12: false });
+        }
+
+        function renderParsedPlayerData(data) {
+            const wrap = document.getElementById('queryParsedWrap');
+            if (!data || typeof data !== 'object') {
+                wrap.innerHTML = '<p>无数据</p>';
+                return;
+            }
+
+            const rows = [
+                ['name', data.name ?? ''],
+                ['uuid', data.uuid ?? ''],
+                ['from', data.from ?? ''],
+                ['ban', String(data.ban ?? '')],
+                ['banStart', formatIsoTime(data.banStart)],
+                ['banTime', data.banTime ?? ''],
+                ['lastLogin', formatTimestamp(data.lastLogin)],
+                ['ip', data.ip ?? '']
+            ];
+
+            const html = rows.map(([k, v]) => `<tr><th>${k}</th><td>${v}</td></tr>`).join('');
+            wrap.innerHTML = `<table class="parsed-table"><tbody>${html}</tbody></table>`;
         }
 
         async function banPlayer() {
