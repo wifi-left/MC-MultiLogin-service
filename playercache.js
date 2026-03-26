@@ -26,7 +26,7 @@ function class_PlayerCache(path) {
     this.cacheUUID = function (player, uuid) {
         this.UUIDCache[uuid] = player;
         try {
-            fs.writeFileSync(this.path + "/ud.json", JSON.stringify(this.UUIDCache, null, 0));
+            fs.writeFileSync(this.path + "/a.ud.json", JSON.stringify(this.UUIDCache, null, 0));
         } catch (e) {
             console.error(e);
         }
@@ -169,7 +169,7 @@ function class_PlayerCache(path) {
             let files = fs.readdirSync(this.path);
             let players = [];
             for (let file of files) {
-                if (file.endsWith('.json') && file !== 'ud.json') {
+                if (file.endsWith('.json') && file !== 'a.ud.json') {
                     players.push(file.substring(0, file.length - 5));
                 }
             }
@@ -205,7 +205,7 @@ function class_PlayerCache(path) {
             let data = JSON.parse(content);
             if (data.uuid) {
                 delete this.UUIDCache[data.uuid];
-                fs.writeFileSync(this.path + "/ud.json", JSON.stringify(this.UUIDCache, null, 0));
+                fs.writeFileSync(this.path + "/a.ud.json", JSON.stringify(this.UUIDCache, null, 0));
             }
             fs.rmSync(this.path + "/" + player + ".json");
             return true;
@@ -218,8 +218,8 @@ function class_PlayerCache(path) {
         fs.mkdirSync(path, { recursive: true });
     }
     try {
-        if (fs.existsSync(path + "/ud.json")) {
-            this.UUIDCache = JSON.parse(fs.readFileSync(path + "/ud.json"));
+        if (fs.existsSync(path + "/a.ud.json")) {
+            this.UUIDCache = JSON.parse(fs.readFileSync(path + "/a.ud.json"));
         } else {
             this.UUIDCache = {};
         }
