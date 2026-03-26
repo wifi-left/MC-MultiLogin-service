@@ -290,7 +290,7 @@ function urlHandle_joinServer(req, res, from) {
                     } else {
                         PlayerCaches[from].new_login(username, new Date().getTime(), ip);
                     }
-                    res.send(data).end();
+                    // res.send(data).end();
                 }).catch(e => {
                     if (e !== "NOT_FOUND") {
                         console.error(e);
@@ -314,7 +314,7 @@ function urlHandle_joinServer(req, res, from) {
                     } else {
                         PlayerCaches[from].new_login(username, new Date().getTime(), ip);
                     }
-                    res.send(data).end();
+                    // res.send(data).end();
                 }).catch(e => {
                     if (e !== "NOT_FOUND") {
                         console.error(e);
