@@ -229,6 +229,7 @@ function urlHandle_joinServer(req, res, from) {
     let info = PlayerCaches[from].lookup(username);
     if (pending_players[username] === true) {
         detailReject(res, detail, "LOGIN_TOO_FAST", getMsg("LOGIN_TOO_FAST", {}));
+        log(`[COOLDOWN] ${username} login too fast. (Pending)`)
         return;
     }
     if (info) {
@@ -236,6 +237,7 @@ function urlHandle_joinServer(req, res, from) {
             let lastLoginTime = parseInt(info.lastLogin);
             if (!isNaN(lastLoginTime)) {
                 if (new Date().getTime() - lastLoginTime < loginCooldownTime) {
+                    log(`[COOLDOWN] ${username} login too fast. (Cooldown)`)
                     detailReject(res, detail, "LOGIN_TOO_FAST", getMsg("LOGIN_TOO_FAST", {}));
                     return;
                 }
