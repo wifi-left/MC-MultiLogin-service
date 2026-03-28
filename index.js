@@ -227,18 +227,13 @@ function urlHandle_joinServer(req, res, from) {
         return;
     }
     log('[JOIN] <' + username + "> want to join. IP: " + ipdisplay + "");
+    if (pending_players[username] === true) {
+        detailReject(res, detail, "LOGIN_TOO_FAST", getMsg("LOGIN_TOO_FAST", {}));
+        log(`[COOLDOWN] ${username} login too fast. (Pending)`)
+        return;
+    }
     let info = PlayerCaches[from].lookup(username);
     if (info) {
-        if (info.lastLogin) {
-            let lastLoginTime = parseInt(info.lastLogin);
-            if (!isNaN(lastLoginTime)) {
-                if (new Date().getTime() - lastLoginTime < loginCooldownTime) {
-                    log(`[COOLDOWN] ${username} login too fast. (Cooldown)`)
-                    detailReject(res, detail, "LOGIN_TOO_FAST", getMsg("LOGIN_TOO_FAST", {}));
-                    return;
-                }
-            }
-        }
         if (info.ban == true) {
             if (info.banTime == 0) {
                 console.log("Player was forever banned.")
@@ -261,10 +256,15 @@ function urlHandle_joinServer(req, res, from) {
     if (PUSH_LOGINMETHOD_PLAYERS[profile_name] != undefined) {
         api = lookupApi(PUSH_LOGINMETHOD_PLAYERS[profile_name]);
     } else {
-        if (pending_players[username] === true) {
-            detailReject(res, detail, "LOGIN_TOO_FAST", getMsg("LOGIN_TOO_FAST", {}));
-            log(`[COOLDOWN] ${username} login too fast. (Pending)`)
-            return;
+        if (info.lastLogin) {
+            let lastLoginTime = parseInt(info.lastLogin);
+            if (!isNaN(lastLoginTime)) {
+                if (new Date().getTime() - lastLoginTime < loginCooldownTime) {
+                    log(`[COOLDOWN] ${username} login too fast. (Cooldown)`)
+                    detailReject(res, detail, "LOGIN_TOO_FAST", getMsg("LOGIN_TOO_FAST", {}));
+                    return;
+                }
+            }
         }
     }
     if (api == null) {
