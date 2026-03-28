@@ -26,6 +26,11 @@ npm install
 
 安装成功后，使用 `npm run server` 或者 `node index.js` 启动web服务。
 
+## 配套模组/插件
+我们建议使用。它们可以为玩家提供更详细的错误信息而不是最简单的“无法验证用户名”。
+- [对于 Fabric 1.21+](https://github.com/wifi-left/mc-multilogin-compat-mod)
+- [对于 Velocity 3.0+](https://github.com/wifi-left/mc-multilogin-compat-velocity)
+
 ## 配置详解
 
 请按照示例修改 `config.json`。示例在 [config_example.json](./config_example.json)

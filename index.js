@@ -228,11 +228,6 @@ function urlHandle_joinServer(req, res, from) {
     }
     log('[JOIN] <' + username + "> want to join. IP: " + ipdisplay + "");
     let info = PlayerCaches[from].lookup(username);
-    if (pending_players[username] === true) {
-        detailReject(res, detail, "LOGIN_TOO_FAST", getMsg("LOGIN_TOO_FAST", {}));
-        log(`[COOLDOWN] ${username} login too fast. (Pending)`)
-        return;
-    }
     if (info) {
         if (info.lastLogin) {
             let lastLoginTime = parseInt(info.lastLogin);
@@ -265,6 +260,12 @@ function urlHandle_joinServer(req, res, from) {
 
     if (PUSH_LOGINMETHOD_PLAYERS[profile_name] != undefined) {
         api = lookupApi(PUSH_LOGINMETHOD_PLAYERS[profile_name]);
+    } else {
+        if (pending_players[username] === true) {
+            detailReject(res, detail, "LOGIN_TOO_FAST", getMsg("LOGIN_TOO_FAST", {}));
+            log(`[COOLDOWN] ${username} login too fast. (Pending)`)
+            return;
+        }
     }
     if (api == null) {
         console.log("Looking up for " + profile_name + " but not found. Try to search for it.");
