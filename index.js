@@ -9,7 +9,7 @@ var port = 0;
 var server = null;
 var DefaultSKINSITE = "original";
 
-const Fetch = require("node-fetch");
+const Fetch = fetch;
 // const iconv = require('iconv-lite')
 const readline = require('readline').createInterface({
     input: process.stdin,
