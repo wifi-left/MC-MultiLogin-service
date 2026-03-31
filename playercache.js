@@ -43,11 +43,18 @@ function class_PlayerCache(path) {
         return false;
 
     }
-    this.new_ban = function (player, time = 60 * 1000) {
+    this.new_ban = function (player, time = 60 * 1000, reason = null) {
         time = parseInt(time);
         if (!checkName(player)) return false;
         if (!fs.existsSync(this.path + "/" + player + ".json")) {
             return false;
+        }
+        function applyReason(data, r) {
+            if (r != null && r !== '') {
+                data['banReason'] = r;
+            } else {
+                delete data['banReason'];
+            }
         }
         try {
             let content = fs.readFileSync(this.path + "/" + player + ".json");
@@ -56,13 +63,16 @@ function class_PlayerCache(path) {
                 data['ban'] = true;
                 data['banStart'] = new Date();
                 data['banTime'] = 0;
+                applyReason(data, reason);
             } else if (time == -1) {
                 data['ban'] = false;
                 data['banTime'] = 0;
+                delete data['banReason'];
             } else {
                 data['ban'] = true;
                 data['banStart'] = new Date();
                 data['banTime'] = new Date().getTime() + time;
+                applyReason(data, reason);
             }
             fs.writeFileSync(this.path + "/" + player + ".json", JSON.stringify(data, null, 2));
             return true;
