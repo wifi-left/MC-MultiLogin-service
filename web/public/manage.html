@@ -242,6 +242,42 @@
             background: #f7f7f7;
             color: #333;
         }
+
+        .ban-duration-row {
+            display: flex;
+            align-items: center;
+            gap: 6px;
+            flex-wrap: wrap;
+            margin-top: 8px;
+        }
+
+        .ban-duration-row input {
+            width: 70px;
+            flex: 0 0 70px;
+        }
+
+        .ban-duration-row span {
+            color: #555;
+            font-weight: bold;
+        }
+
+        .ban-time-mode-row {
+            display: flex;
+            gap: 20px;
+            margin-bottom: 6px;
+        }
+
+        .radio-label {
+            display: flex;
+            align-items: center;
+            gap: 6px;
+            font-weight: normal;
+            cursor: pointer;
+        }
+
+        .radio-label input[type="radio"] {
+            width: auto;
+        }
     </style>
 </head>
 
@@ -251,13 +287,13 @@
     <div class="config-section">
         <div class="form-group">
             <label for="methodSelect">选择子配置:</label>
-            <select id="methodSelect">
+            <select id="methodSelect" onchange="onMethodChange()">
                 <option value="">-- 选择子配置 --</option>
             </select>
         </div>
         <div class="form-group">
             <label for="secretKey">密钥:</label>
-            <input type="password" id="secretKey" placeholder="输入子配置的密钥">
+            <input type="password" id="secretKey" placeholder="输入子配置的密钥" oninput="onSecretChange()">
         </div>
     </div>
 
@@ -330,11 +366,43 @@
                 <input type="text" id="banTarget" placeholder="输入玩家名称或UUID">
             </div>
             <div class="form-group">
-                <label for="banTime">封禁时间 (毫秒):</label>
-                <input type="number" id="banTime" placeholder="输入时间 (0=永久, -1=解封)">
-                <small>0 = 永久封禁, -1 = 解除封禁, 其他正整数 = 临时封禁时长（毫秒）</small>
+                <label for="banMode">封禁操作:</label>
+                <select id="banMode" onchange="updateBanUI()">
+                    <option value="temp">临时封禁</option>
+                    <option value="forever">永久封禁</option>
+                    <option value="unban">解除封禁</option>
+                </select>
             </div>
-            <button onclick="banPlayer()">执行封禁</button>
+            <div class="form-group" id="banDurationGroup">
+                <label>封禁时长 / 结束时间:</label>
+                <div class="ban-time-mode-row">
+                    <label class="radio-label">
+                        <input type="radio" name="banTimeMode" value="duration" checked onchange="updateBanTimeMode()"> 输入时长
+                    </label>
+                    <label class="radio-label">
+                        <input type="radio" name="banTimeMode" value="datetime" onchange="updateBanTimeMode()"> 选择时间
+                    </label>
+                </div>
+                <div id="banDurationInputs" class="ban-duration-row">
+                    <input type="number" id="banDays" min="0" value="0" placeholder="0">
+                    <span>天</span>
+                    <input type="number" id="banHours" min="0" max="23" value="0" placeholder="0">
+                    <span>时</span>
+                    <input type="number" id="banMinutes" min="0" max="59" value="0" placeholder="0">
+                    <span>分</span>
+                    <input type="number" id="banSeconds" min="0" max="59" value="0" placeholder="0">
+                    <span>秒</span>
+                </div>
+                <div id="banDatetimeInputs" style="display:none;">
+                    <input type="datetime-local" id="banDatetime">
+                    <small>选择封禁结束的具体时间</small>
+                </div>
+            </div>
+            <div class="form-group" id="banReasonGroup">
+                <label for="banReason">封禁原因 (可选):</label>
+                <input type="text" id="banReason" placeholder="输入封禁原因（可为空）">
+            </div>
+            <button onclick="banPlayer()">执行</button>
             <div id="banResult" class="result"></div>
         </div>
     </div>
@@ -373,9 +441,44 @@
                         option.textContent = `${method.name || 'default'} (${method.url})`;
                         select.appendChild(option);
                     });
+                    // Restore last selected method
+                    const savedIdx = localStorage.getItem('ml_last_method');
+                    if (savedIdx !== null && methodConfigs[savedIdx]) {
+                        select.value = savedIdx;
+                        restoreSecretForMethod(savedIdx);
+                    }
                 }
             } catch (e) {
                 console.error('Failed to load method configs:', e);
+            }
+        }
+
+        function onMethodChange() {
+            const select = document.getElementById('methodSelect');
+            const idx = select.value;
+            localStorage.setItem('ml_last_method', idx);
+            restoreSecretForMethod(idx);
+        }
+
+        function onSecretChange() {
+            const select = document.getElementById('methodSelect');
+            const idx = select.value;
+            if (!idx && idx !== '0') return;
+            const method = methodConfigs[idx];
+            if (!method) return;
+            const secret = document.getElementById('secretKey').value;
+            const secrets = JSON.parse(localStorage.getItem('ml_secrets') || '{}');
+            secrets[method.url] = secret;
+            localStorage.setItem('ml_secrets', JSON.stringify(secrets));
+        }
+
+        function restoreSecretForMethod(idx) {
+            const method = methodConfigs[idx];
+            if (!method) return;
+            const secrets = JSON.parse(localStorage.getItem('ml_secrets') || '{}');
+            const saved = secrets[method.url];
+            if (saved !== undefined) {
+                document.getElementById('secretKey').value = saved;
             }
         }
 
@@ -641,13 +744,30 @@
                 return;
             }
 
+            let banStatusText = '否';
+            let banUnbanTimeText = '无';
+            if (data.ban === true) {
+                if (data.banTime === 0) {
+                    banStatusText = '是（永久封禁）';
+                } else {
+                    const now = Date.now();
+                    if (data.banTime > now) {
+                        banStatusText = '是（临时封禁）';
+                        banUnbanTimeText = formatTimestamp(data.banTime);
+                    } else {
+                        banStatusText = '否（封禁已过期）';
+                    }
+                }
+            }
+
             const rows = [
                 ['name', data.name ?? ''],
                 ['uuid', data.uuid ?? ''],
                 ['from', data.from ?? ''],
-                ['ban', String(data.ban ?? '')],
-                ['banStart', formatIsoTime(data.banStart)],
-                ['banTime', data.banTime ?? ''],
+                ['封禁状态', banStatusText],
+                ['封禁原因', data.banReason ?? '无'],
+                ['封禁开始时间', formatIsoTime(data.banStart)],
+                ['解封时间', banUnbanTimeText],
                 ['lastLogin', formatTimestamp(data.lastLogin)],
                 ['ip', data.ip ?? '']
             ];
@@ -656,28 +776,85 @@
             wrap.innerHTML = `<table class="parsed-table"><tbody>${html}</tbody></table>`;
         }
 
+        function updateBanUI() {
+            const mode = document.getElementById('banMode').value;
+            document.getElementById('banDurationGroup').style.display = mode === 'temp' ? '' : 'none';
+            document.getElementById('banReasonGroup').style.display = mode === 'unban' ? 'none' : '';
+        }
+
+        function updateBanTimeMode() {
+            const mode = document.querySelector('input[name="banTimeMode"]:checked').value;
+            document.getElementById('banDurationInputs').style.display = mode === 'duration' ? '' : 'none';
+            document.getElementById('banDatetimeInputs').style.display = mode === 'datetime' ? '' : 'none';
+        }
+
         async function banPlayer() {
             const method = getSelectedMethod();
             const secret = getSecret();
             const banType = document.getElementById('banType').value;
             const banTarget = document.getElementById('banTarget').value;
-            const banTime = document.getElementById('banTime').value;
+            const banMode = document.getElementById('banMode').value;
+            const banReason = document.getElementById('banReason').value.trim();
 
-            if (!method || !secret || !banTarget || !banTime) {
+            if (!method || !secret || !banTarget) {
                 showResult('请填写完整信息', false, 'banResult');
                 return;
             }
 
+            let banTimeMs;
+            let timeDesc;
+            if (banMode === 'forever') {
+                banTimeMs = 0;
+                timeDesc = '永久封禁';
+            } else if (banMode === 'unban') {
+                banTimeMs = -1;
+                timeDesc = '解除封禁';
+            } else {
+                const timeMode = document.querySelector('input[name="banTimeMode"]:checked').value;
+                if (timeMode === 'datetime') {
+                    const dt = document.getElementById('banDatetime').value;
+                    if (!dt) {
+                        showResult('请选择封禁结束时间', false, 'banResult');
+                        return;
+                    }
+                    const endTs = new Date(dt).getTime();
+                    banTimeMs = endTs - Date.now();
+                    if (banTimeMs <= 0) {
+                        showResult('封禁结束时间必须晚于当前时间', false, 'banResult');
+                        return;
+                    }
+                    timeDesc = '临时封禁至 ' + new Date(dt).toLocaleString('zh-CN', { hour12: false });
+                } else {
+                    const days = Math.max(0, parseInt(document.getElementById('banDays').value) || 0);
+                    const hours = Math.max(0, parseInt(document.getElementById('banHours').value) || 0);
+                    const minutes = Math.max(0, parseInt(document.getElementById('banMinutes').value) || 0);
+                    const seconds = Math.max(0, parseInt(document.getElementById('banSeconds').value) || 0);
+                    banTimeMs = (days * 86400 + hours * 3600 + minutes * 60 + seconds) * 1000;
+                    if (banTimeMs <= 0) {
+                        showResult('请输入有效的封禁时长', false, 'banResult');
+                        return;
+                    }
+                    const parts = [];
+                    if (days) parts.push(`${days}天`);
+                    if (hours) parts.push(`${hours}时`);
+                    if (minutes) parts.push(`${minutes}分`);
+                    if (seconds) parts.push(`${seconds}秒`);
+                    timeDesc = '临时封禁 ' + parts.join('');
+                }
+            }
+
             try {
-                const response = await fetch(`${method.url}/ban/${banType}/${banTarget}/${banTime}`, {
+                const body = { secret };
+                if (banReason && banMode !== 'unban') body.reason = banReason;
+
+                const response = await fetch(`${method.url}/ban/${banType}/${banTarget}/${banTimeMs}`, {
                     method: 'POST',
                     headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify({ secret })
+                    body: JSON.stringify(body)
                 });
 
                 const result = await response.json();
                 if (result.success) {
-                    const timeDesc = banTime == 0 ? '永久封禁' : banTime == -1 ? '解除封禁' : `临时封禁 ${banTime}ms`;
                     showResult(`成功 ${timeDesc} ${result.player || banTarget}`, true, 'banResult');
                 } else {
                     showResult(result.error || '操作失败', false, 'banResult');
@@ -828,7 +1005,10 @@
             }
         }
 
-        window.onload = loadMethodConfigs;
+        window.onload = function () {
+            loadMethodConfigs();
+            updateBanUI();
+        };
     </script>
 </body>
 

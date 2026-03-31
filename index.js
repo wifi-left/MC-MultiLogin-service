@@ -74,7 +74,8 @@ function getMsg(key, vars) {
         "UNSUPPORTED_SKIN_SITE": "该玩家注册的皮肤站不在此服务器支持列表中",
         "FETCH_ERROR": "连接验证服务器失败",
         "VERIFY_FAILED": "验证失败，你应当通过 {name} 进入",
-        "LOGIN_TOO_FAST": "你的登录过快，请稍后再试"
+        "LOGIN_TOO_FAST": "你的登录过快，请稍后再试",
+        "BAN_UNTIL": "解封时间: "
     };
     let msg = (ErrorMessages[key] !== undefined) ? ErrorMessages[key] : (defaults[key] || key);
     if (vars) {
@@ -237,7 +238,9 @@ function urlHandle_joinServer(req, res, from) {
         if (info.ban == true) {
             if (info.banTime == 0) {
                 console.log("Player was forever banned.")
-                detailReject(res, detail, "BANNED_FOREVER", getMsg("BANNED_FOREVER", {}));
+                let msg = getMsg("BANNED_FOREVER", {});
+                if (info.banReason) msg += '\n' + info.banReason;
+                detailReject(res, detail, "BANNED_FOREVER", msg);
                 return;
             }
             else if (info.banTime <= new Date().getTime()) {
@@ -246,7 +249,10 @@ function urlHandle_joinServer(req, res, from) {
                 console.log("<" + username + "> was unbanned (Timeout).")
             } else {
                 console.log("Player was banned.")
-                detailReject(res, detail, "BANNED", getMsg("BANNED", {}));
+                let msg = getMsg("BANNED", {});
+                if (info.banReason) msg += '\n' + info.banReason;
+                msg += '\n' + getMsg("BAN_UNTIL", {}) + new Date(info.banTime).toLocaleString('zh-CN', { hour12: false });
+                detailReject(res, detail, "BANNED", msg);
                 return;
             }
         }

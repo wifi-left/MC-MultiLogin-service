@@ -49,6 +49,13 @@ function class_PlayerCache(path) {
         if (!fs.existsSync(this.path + "/" + player + ".json")) {
             return false;
         }
+        function applyReason(data, r) {
+            if (r != null && r !== '') {
+                data['banReason'] = r;
+            } else {
+                delete data['banReason'];
+            }
+        }
         try {
             let content = fs.readFileSync(this.path + "/" + player + ".json");
             let data = JSON.parse(content);
@@ -56,11 +63,7 @@ function class_PlayerCache(path) {
                 data['ban'] = true;
                 data['banStart'] = new Date();
                 data['banTime'] = 0;
-                if (reason != null && reason !== '') {
-                    data['banReason'] = reason;
-                } else {
-                    delete data['banReason'];
-                }
+                applyReason(data, reason);
             } else if (time == -1) {
                 data['ban'] = false;
                 data['banTime'] = 0;
@@ -69,11 +72,7 @@ function class_PlayerCache(path) {
                 data['ban'] = true;
                 data['banStart'] = new Date();
                 data['banTime'] = new Date().getTime() + time;
-                if (reason != null && reason !== '') {
-                    data['banReason'] = reason;
-                } else {
-                    delete data['banReason'];
-                }
+                applyReason(data, reason);
             }
             fs.writeFileSync(this.path + "/" + player + ".json", JSON.stringify(data, null, 2));
             return true;
