@@ -541,15 +541,16 @@ function urlHandle_ban_uuid(req, res, from) {
                 return;
             }
 
+            let reason = (typeof data.reason === 'string' && data.reason.trim() !== '') ? data.reason.trim() : null;
             let result;
             if (time === 0) {
-                result = PlayerCaches[from].new_ban(playerName, 0);
+                result = PlayerCaches[from].new_ban(playerName, 0, reason);
                 log(`[BAN API] Permanently banned <${playerName}> (UUID: ${uuid})`);
             } else if (time === -1) {
                 result = PlayerCaches[from].new_ban(playerName, -1);
                 log(`[BAN API] Unbanned <${playerName}> (UUID: ${uuid})`);
             } else {
-                result = PlayerCaches[from].new_ban(playerName, time);
+                result = PlayerCaches[from].new_ban(playerName, time, reason);
                 log(`[BAN API] Temporarily banned <${playerName}> (UUID: ${uuid}) for ${time}ms`);
             }
 
@@ -594,15 +595,16 @@ function urlHandle_ban_name(req, res, from) {
                 return;
             }
 
+            let reason = (typeof data.reason === 'string' && data.reason.trim() !== '') ? data.reason.trim() : null;
             let result;
             if (time === 0) {
-                result = PlayerCaches[from].new_ban(playerName, 0);
+                result = PlayerCaches[from].new_ban(playerName, 0, reason);
                 log(`[BAN API] Permanently banned <${playerName}>`);
             } else if (time === -1) {
                 result = PlayerCaches[from].new_ban(playerName, -1);
                 log(`[BAN API] Unbanned <${playerName}>`);
             } else {
-                result = PlayerCaches[from].new_ban(playerName, time);
+                result = PlayerCaches[from].new_ban(playerName, time, reason);
                 log(`[BAN API] Temporarily banned <${playerName}> for ${time}ms`);
             }
 
