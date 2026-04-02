@@ -267,6 +267,29 @@
             margin-bottom: 6px;
         }
 
+        .ban-list-header {
+            margin-top: 18px;
+            display: flex;
+            align-items: center;
+            gap: 10px;
+            flex-wrap: wrap;
+        }
+
+        .ban-badge {
+            display: inline-block;
+            margin-left: 8px;
+            padding: 2px 6px;
+            border-radius: 10px;
+            font-size: 12px;
+            font-weight: bold;
+            color: #fff;
+            background: #ff9800;
+        }
+
+        .ban-badge.forever {
+            background: #d32f2f;
+        }
+
         .radio-label {
             display: flex;
             align-items: center;
@@ -404,6 +427,13 @@
             </div>
             <button onclick="banPlayer()">执行</button>
             <div id="banResult" class="result"></div>
+
+            <div class="ban-list-header">
+                <h3 style="margin:0;">当前封禁玩家列表</h3>
+                <button class="secondary" onclick="loadBannedPlayerList()">刷新封禁列表</button>
+            </div>
+            <div id="banListResult" class="result"></div>
+            <ul id="bannedPlayerList" class="player-list"></ul>
         </div>
     </div>
 
@@ -458,6 +488,7 @@
             const idx = select.value;
             localStorage.setItem('ml_last_method', idx);
             restoreSecretForMethod(idx);
+            loadBannedPlayerList();
         }
 
         function onSecretChange() {
@@ -470,6 +501,7 @@
             const secrets = JSON.parse(localStorage.getItem('ml_secrets') || '{}');
             secrets[method.url] = secret;
             localStorage.setItem('ml_secrets', JSON.stringify(secrets));
+            loadBannedPlayerList();
         }
 
         function restoreSecretForMethod(idx) {
@@ -526,6 +558,7 @@
         let allPlayers = [];
         let currentPlayerPage = 1;
         const PLAYER_PAGE_SIZE = 20;
+        let allBannedPlayers = [];
 
         // 本地搜索关键字
         let playerSearchKeyword = '';
@@ -856,11 +889,146 @@
                 const result = await response.json();
                 if (result.success) {
                     showResult(`成功 ${timeDesc} ${result.player || banTarget}`, true, 'banResult');
+                    loadBannedPlayerList();
                 } else {
                     showResult(result.error || '操作失败', false, 'banResult');
                 }
             } catch (e) {
                 showResult('请求失败: ' + e.message, false, 'banResult');
+            }
+        }
+
+        function isPlayerCurrentlyBanned(playerData) {
+            if (!playerData || playerData.ban !== true) return false;
+            if (playerData.banTime === 0) return true;
+            const banTime = Number(playerData.banTime);
+            return Number.isFinite(banTime) && banTime > Date.now();
+        }
+
+        function getBanTypeText(playerData) {
+            if (playerData?.banTime === 0) return '永久封禁';
+            return '临时封禁';
+        }
+
+        function getBanUntilText(playerData) {
+            if (playerData?.banTime === 0) return '永久';
+            return formatTimestamp(playerData?.banTime);
+        }
+
+        function renderBannedPlayerList() {
+            const listEl = document.getElementById('bannedPlayerList');
+            listEl.innerHTML = '';
+
+            if (!Array.isArray(allBannedPlayers) || allBannedPlayers.length === 0) {
+                const emptyLi = document.createElement('li');
+                emptyLi.className = 'player-item';
+                emptyLi.textContent = '当前没有处于封禁中的玩家';
+                listEl.appendChild(emptyLi);
+                return;
+            }
+
+            allBannedPlayers.forEach(p => {
+                const li = document.createElement('li');
+                li.className = 'player-item';
+
+                const left = document.createElement('div');
+                const name = p.name || '(unknown)';
+                const uuidText = p.uuid ? ` (${p.uuid})` : '';
+                const banTypeText = getBanTypeText(p.data);
+                const untilText = getBanUntilText(p.data);
+                const badgeClass = p.data?.banTime === 0 ? 'ban-badge forever' : 'ban-badge';
+                const titleNode = document.createElement('div');
+                titleNode.textContent = `${name}${uuidText}`;
+                const badge = document.createElement('span');
+                badge.className = badgeClass;
+                badge.textContent = banTypeText;
+                titleNode.appendChild(badge);
+
+                const detailNode = document.createElement('small');
+                const reasonText = p.data?.banReason ? `，原因：${p.data.banReason}` : '';
+                detailNode.textContent = `解封：${untilText}${reasonText}`;
+
+                left.appendChild(titleNode);
+                left.appendChild(detailNode);
+
+                const right = document.createElement('div');
+
+                const viewBtn = document.createElement('button');
+                viewBtn.className = 'secondary';
+                viewBtn.textContent = '查看';
+                viewBtn.onclick = () => viewPlayer(name);
+
+                const unbanBtn = document.createElement('button');
+                unbanBtn.className = 'danger';
+                unbanBtn.textContent = '解封';
+                unbanBtn.onclick = () => quickUnbanPlayer(name);
+
+                right.appendChild(viewBtn);
+                right.appendChild(unbanBtn);
+                li.appendChild(left);
+                li.appendChild(right);
+                listEl.appendChild(li);
+            });
+        }
+
+        async function loadBannedPlayerList() {
+            const method = getSelectedMethod();
+            const secret = getSecret();
+            if (!method || !secret) return;
+
+            try {
+                const response = await fetch(`${method.url}/manage/list`, {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ secret })
+                });
+
+                const result = await response.json();
+                if (result.success) {
+                    const players = Array.isArray(result.players) ? result.players : [];
+                    allBannedPlayers = players
+                        .map(normalizePlayer)
+                        .map(p => ({ ...p, data: p.raw && typeof p.raw === 'object' ? p.raw : {} }))
+                        .filter(p => isPlayerCurrentlyBanned(p.data));
+                    renderBannedPlayerList();
+                    showResult(`当前封禁玩家 ${allBannedPlayers.length} 人`, true, 'banListResult');
+                } else {
+                    allBannedPlayers = [];
+                    renderBannedPlayerList();
+                    showResult(result.error || '加载封禁列表失败', false, 'banListResult');
+                }
+            } catch (e) {
+                allBannedPlayers = [];
+                renderBannedPlayerList();
+                showResult('请求失败: ' + e.message, false, 'banListResult');
+            }
+        }
+
+        async function quickUnbanPlayer(playerName) {
+            const method = getSelectedMethod();
+            const secret = getSecret();
+            if (!method || !secret || !playerName) return;
+
+            if (!confirm(`确定要解除玩家 ${playerName} 的封禁吗？`)) {
+                return;
+            }
+
+            try {
+                const response = await fetch(`${method.url}/ban/name/${playerName}/-1`, {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ secret })
+                });
+
+                const result = await response.json();
+                if (result.success) {
+                    showResult(`已解除玩家 ${playerName} 的封禁`, true, 'banListResult');
+                    loadBannedPlayerList();
+                } else {
+                    showResult(result.error || '解封失败', false, 'banListResult');
+                }
+            } catch (e) {
+                showResult('请求失败: ' + e.message, false, 'banListResult');
             }
         }
 
@@ -1008,6 +1176,7 @@
         window.onload = function () {
             loadMethodConfigs();
             updateBanUI();
+            renderBannedPlayerList();
         };
     </script>
 </body>
