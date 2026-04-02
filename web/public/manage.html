@@ -505,7 +505,6 @@
             const idx = select.value;
             localStorage.setItem('ml_last_method', idx);
             restoreSecretForMethod(idx);
-            loadBannedPlayerList();
         }
 
         function onSecretChange() {
@@ -518,7 +517,6 @@
             const secrets = JSON.parse(localStorage.getItem('ml_secrets') || '{}');
             secrets[method.url] = secret;
             localStorage.setItem('ml_secrets', JSON.stringify(secrets));
-            loadBannedPlayerList();
         }
 
         function restoreSecretForMethod(idx) {
