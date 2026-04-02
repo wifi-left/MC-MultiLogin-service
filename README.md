@@ -115,6 +115,7 @@ npm install
 
 - `POST {url}/manage/query/{player}` — 查询玩家缓存（请求体：`{"secret": "..."}`）
 - `POST {url}/manage/list` — 列出所有缓存玩家
+- `POST {url}/manage/bans` — 列出当前被封禁玩家及封禁信息（请求体：`{"secret": "..."}`；返回 `name`、`banReason`、`banStart`、`banTime`）
 - `POST {url}/manage/modify/{player}` — 修改玩家缓存（请求体：`{"secret": "...", "playerData": {...}}`）
 - `POST {url}/manage/delete/{player}` — 删除玩家缓存
 - `POST {url}/ban/uuid/{uuid}/{time}` — 按UUID封禁（0=永久，-1=解封，正整数=毫秒时长）

@@ -275,6 +275,19 @@
             flex-wrap: wrap;
         }
 
+        .ban-search-row {
+            margin: 10px 0;
+            display: flex;
+            gap: 10px;
+            align-items: center;
+        }
+
+        .ban-search-row input {
+            flex: 1 1 auto;
+            width: auto;
+            min-width: 220px;
+        }
+
         .ban-badge {
             display: inline-block;
             margin-left: 8px;
@@ -432,6 +445,10 @@
                 <h3 style="margin:0;">当前封禁玩家列表</h3>
                 <button class="secondary" onclick="loadBannedPlayerList()">刷新封禁列表</button>
             </div>
+            <div class="ban-search-row">
+                <input type="text" id="banSearchInput" placeholder="按玩家名搜索封禁列表" oninput="updateBanSearch()">
+                <button class="secondary" onclick="clearBanSearch()">重置搜索</button>
+            </div>
             <div id="banListResult" class="result"></div>
             <ul id="bannedPlayerList" class="player-list"></ul>
         </div>
@@ -559,6 +576,7 @@
         let currentPlayerPage = 1;
         const PLAYER_PAGE_SIZE = 20;
         let allBannedPlayers = [];
+        let banSearchKeyword = '';
 
         // 本地搜索关键字
         let playerSearchKeyword = '';
@@ -898,55 +916,59 @@
             }
         }
 
-        function isPlayerCurrentlyBanned(playerData) {
-            if (!playerData || playerData.ban !== true) return false;
-            if (playerData.banTime === 0) return true;
-            const banTime = Number(playerData.banTime);
-            return Number.isFinite(banTime) && banTime > Date.now();
+        function updateBanSearch() {
+            const input = document.getElementById('banSearchInput');
+            banSearchKeyword = (input?.value || '').trim().toLowerCase();
+            renderBannedPlayerList();
         }
 
-        function getBanTypeText(playerData) {
-            if (playerData?.banTime === 0) return '永久封禁';
-            return '临时封禁';
+        function clearBanSearch() {
+            const input = document.getElementById('banSearchInput');
+            if (input) input.value = '';
+            banSearchKeyword = '';
+            renderBannedPlayerList();
         }
 
-        function getBanUntilText(playerData) {
-            if (playerData?.banTime === 0) return '永久';
-            return formatTimestamp(playerData?.banTime);
+        function getFilteredBannedPlayers() {
+            if (!banSearchKeyword) return allBannedPlayers;
+            return allBannedPlayers.filter(p => String(p.name || '').toLowerCase().includes(banSearchKeyword));
         }
 
         function renderBannedPlayerList() {
             const listEl = document.getElementById('bannedPlayerList');
             listEl.innerHTML = '';
 
-            if (!Array.isArray(allBannedPlayers) || allBannedPlayers.length === 0) {
+            const filteredBannedPlayers = getFilteredBannedPlayers();
+
+            if (!Array.isArray(filteredBannedPlayers) || filteredBannedPlayers.length === 0) {
                 const emptyLi = document.createElement('li');
                 emptyLi.className = 'player-item';
-                emptyLi.textContent = '当前没有处于封禁中的玩家';
+                emptyLi.textContent = allBannedPlayers.length > 0 && banSearchKeyword
+                    ? '没有匹配的封禁玩家'
+                    : '当前没有处于封禁中的玩家';
                 listEl.appendChild(emptyLi);
                 return;
             }
 
-            allBannedPlayers.forEach(p => {
+            filteredBannedPlayers.forEach(p => {
                 const li = document.createElement('li');
                 li.className = 'player-item';
 
                 const left = document.createElement('div');
                 const name = p.name || '(unknown)';
-                const uuidText = p.uuid ? ` (${p.uuid})` : '';
-                const banTypeText = getBanTypeText(p.data);
-                const untilText = getBanUntilText(p.data);
-                const badgeClass = p.data?.banTime === 0 ? 'ban-badge forever' : 'ban-badge';
+                const banTypeText = p.banTime === 0 ? '永久封禁' : '临时封禁';
+                const untilText = p.banTime === 0 ? '永久' : formatTimestamp(p.banTime);
+                const badgeClass = p.banTime === 0 ? 'ban-badge forever' : 'ban-badge';
                 const titleNode = document.createElement('div');
-                titleNode.textContent = `${name}${uuidText}`;
+                titleNode.textContent = name;
                 const badge = document.createElement('span');
                 badge.className = badgeClass;
                 badge.textContent = banTypeText;
                 titleNode.appendChild(badge);
 
                 const detailNode = document.createElement('small');
-                const reasonText = p.data?.banReason ? `，原因：${p.data.banReason}` : '';
-                detailNode.textContent = `解封：${untilText}${reasonText}`;
+                const reasonText = p.banReason ? p.banReason : '无';
+                detailNode.textContent = `封禁原因：${reasonText}，封禁时间：${untilText}`;
 
                 left.appendChild(titleNode);
                 left.appendChild(detailNode);
@@ -977,7 +999,7 @@
             if (!method || !secret) return;
 
             try {
-                const response = await fetch(`${method.url}/manage/list`, {
+                const response = await fetch(`${method.url}/manage/bans`, {
                     method: 'POST',
                     headers: { 'Content-Type': 'application/json' },
                     body: JSON.stringify({ secret })
@@ -985,11 +1007,7 @@
 
                 const result = await response.json();
                 if (result.success) {
-                    const players = Array.isArray(result.players) ? result.players : [];
-                    allBannedPlayers = players
-                        .map(normalizePlayer)
-                        .map(p => ({ ...p, data: p.raw && typeof p.raw === 'object' ? p.raw : {} }))
-                        .filter(p => isPlayerCurrentlyBanned(p.data));
+                    allBannedPlayers = Array.isArray(result.players) ? result.players : [];
                     renderBannedPlayerList();
                     showResult(`当前封禁玩家 ${allBannedPlayers.length} 人`, true, 'banListResult');
                 } else {

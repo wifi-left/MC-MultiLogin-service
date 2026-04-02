@@ -57,6 +57,7 @@ for (let i = 0; i < HANDLES.length; i++) {
     // Management API endpoints
     mApp.post(`${url}/manage/query/:player`, function (req, res) { urlHandle_manage_query(req, res, idx) });
     mApp.post(`${url}/manage/list`, function (req, res) { urlHandle_manage_list(req, res, idx) });
+    mApp.post(`${url}/manage/bans`, function (req, res) { urlHandle_manage_bans(req, res, idx) });
     mApp.post(`${url}/manage/modify/:player`, function (req, res) { urlHandle_manage_modify(req, res, idx) });
     mApp.post(`${url}/manage/delete/:player`, function (req, res) { urlHandle_manage_delete(req, res, idx) });
 
@@ -691,6 +692,37 @@ function urlHandle_manage_list(req, res, from) {
             }
 
             let players = PlayerCaches[from].list_players();
+            res.send({ "success": true, "players": players, "count": players.length }).end();
+        } catch (e) {
+            console.error(e);
+            res.status(400).send({ "error": "Invalid request" }).end();
+        }
+    });
+}
+
+function urlHandle_manage_bans(req, res, from) {
+    let handle = HANDLES[from];
+    let secret = handle.secret;
+
+    if (!secret) {
+        res.status(403).send({ "error": "Secret key not configured for this endpoint" }).end();
+        return;
+    }
+
+    let body = '';
+    req.on('data', (chunk) => {
+        body += chunk;
+    });
+
+    req.on('end', () => {
+        try {
+            let data = JSON.parse(body);
+            if (data.secret !== secret) {
+                res.status(403).send({ "error": "Invalid secret key" }).end();
+                return;
+            }
+
+            let players = PlayerCaches[from].list_banned_players();
             res.send({ "success": true, "players": players, "count": players.length }).end();
         } catch (e) {
             console.error(e);

@@ -188,6 +188,35 @@ function class_PlayerCache(path) {
             return [];
         }
     }
+    this.list_banned_players = function () {
+        try {
+            let files = fs.readdirSync(this.path);
+            let bans = [];
+            let now = new Date().getTime();
+            for (let file of files) {
+                if (!file.endsWith('.json') || file === 'a.ud.json') continue;
+                let playerName = file.substring(0, file.length - 5);
+                try {
+                    let data = JSON.parse(fs.readFileSync(this.path + "/" + file));
+                    if (data?.ban !== true) continue;
+                    let banTime = Number(data.banTime);
+                    if (banTime !== 0 && (!Number.isFinite(banTime) || banTime <= now)) continue;
+                    bans.push({
+                        name: playerName,
+                        banReason: data.banReason || '',
+                        banStart: data.banStart || null,
+                        banTime: data.banTime
+                    });
+                } catch (e) {
+                    console.error(e);
+                }
+            }
+            return bans;
+        } catch (e) {
+            console.error(e);
+            return [];
+        }
+    }
     this.modify = function (player, newData) {
         if (!checkName(player)) return false;
         if (!fs.existsSync(this.path + "/" + player + ".json")) {
