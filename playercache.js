@@ -25,6 +25,7 @@ function class_PlayerCache(path) {
     }
     this.cacheUUID = function (player, uuid) {
         this.UUIDCache[uuid] = player;
+        log(`[UUID_CACHE] Cache uuid ${uuid} for ${player}`);
         try {
             fs.writeFileSync(this.path + "/a.ud.json", JSON.stringify(this.UUIDCache, null, 0));
         } catch (e) {
@@ -110,8 +111,12 @@ function class_PlayerCache(path) {
                 // info may be false if UUID cache is stale (player file deleted manually);
                 // still reject to avoid UUID conflicts.
                 let existingFrom = info ? info.from : null;
-                log(`<${player}>(From <${from}>) was not allowed to join the server. Because it has a duplicate uuid (the same as <${t}>(From <${existingFrom}>)).`)
-                return { error: "DUPLICATE_UUID", existingName: t, existingFrom: existingFrom };
+                if (from == existingFrom) {
+                    return this.player_changename(t, player);
+                } else {
+                    log(`<${player}>(From <${from}>) was not allowed to join the server. Because it has a duplicate uuid (the same as <${t}>(From <${existingFrom}>)).`)
+                    return { error: "DUPLICATE_UUID", existingName: t, existingFrom: existingFrom };
+                }
             }
         }
         return true;
@@ -131,7 +136,8 @@ function class_PlayerCache(path) {
             }
             data['old_names'].push(original_name)
             data['name'] = new_name;
-
+            let uid = data['uuid'];
+            this.cacheUUID(new_name,uid);
             fs.rmSync(this.path + "/" + original_name + ".json")
 
             fs.writeFileSync(this.path + "/" + new_name + ".json", JSON.stringify(data, null, 2));
@@ -178,8 +184,17 @@ function class_PlayerCache(path) {
             let files = fs.readdirSync(this.path);
             let players = [];
             for (let file of files) {
-                if (file.endsWith('.json') && file !== 'a.ud.json') {
-                    players.push(file.substring(0, file.length - 5));
+                if (!file.endsWith('.json') || file === 'a.ud.json') continue;
+                let playerName = file.substring(0, file.length - 5);
+                try {
+                    let data = JSON.parse(fs.readFileSync(this.path + "/" + file));
+                    players.push({
+                        name: playerName,
+                        uuid: data.uuid,
+                        from: data.from
+                    });
+                } catch (e) {
+                    console.error(e);
                 }
             }
             return players;

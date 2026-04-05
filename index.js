@@ -228,7 +228,7 @@ function urlHandle_joinServer(req, res, from) {
         res.status(403).end();
         return;
     }
-    log('[JOIN] <' + username + "> want to join. IP: " + ipdisplay + "");
+    log('[JOIN][' + handle.name + '] <' + username + "> want to join. IP: " + ipdisplay + "");
     if (pending_players[username] === true) {
         detailReject(res, detail, "LOGIN_TOO_FAST", getMsg("LOGIN_TOO_FAST", {}));
         log(`[COOLDOWN] ${username} login too fast. (Pending)`)
@@ -275,7 +275,7 @@ function urlHandle_joinServer(req, res, from) {
         }
     }
     if (api == null) {
-        console.log("Looking up for " + profile_name + " but not found. Try to search for it.");
+        log("Looking up for " + profile_name + " but not found. Try to search for it.");
         pending_players[profile_name] = true;
         let newH = JSON.parse(JSON.stringify(handle.handles))
         fetchPlayerInfo_step(`?username=${encodeURI(username)}&serverId=${serverId}${ip == null ? "" : `&ip=${ip}`}`, newH, res, username, from, detail);
@@ -292,7 +292,7 @@ function urlHandle_joinServer(req, res, from) {
                     return data.json()
                 }
                 ).then(data => {
-                    log('[JOIN] <' + username + "> was allowed to join from <" + api.name + ">");
+                    log('[JOIN][' + handle.name + '] <' + username + "> was allowed to join from <" + api.name + ">");
                     if (!PlayerCaches[from].lookup(username)) {
                         trySavePlayer(username, api, data, res, from, detail);
                     } else {
@@ -317,7 +317,7 @@ function urlHandle_joinServer(req, res, from) {
                     res.status(data.status);
                     return data.json()
                 }).then(data => {
-                    log('[JOIN] <' + username + "> was allowed to join from <" + api.name + ">");
+                    log('[JOIN][' + handle.name + '] <' + username + "> was allowed to join from <" + api.name + ">");
                     if (!PlayerCaches[from].lookup(username)) {
                         trySavePlayer(username, api, data, res, from, detail);
                     } else {
