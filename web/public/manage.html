@@ -626,7 +626,7 @@
                 if (playerSearchField === 'name') return name.includes(playerSearchKeyword);
                 if (playerSearchField === 'uuid') return uuid.includes(playerSearchKeyword);
                 if (playerSearchField === 'from') return from.includes(playerSearchKeyword);
-                return name.includes(playerSearchKeyword) || uuid.includes(playerSearchKeyword);
+                return name.includes(playerSearchKeyword) || uuid.includes(playerSearchKeyword) || from.includes(playerSearchKeyword);
             });
         }
 
