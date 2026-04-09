@@ -345,6 +345,7 @@
             <h2>玩家列表</h2>
             <button onclick="loadPlayerList()">刷新列表</button>
             <button onclick="outUuidToPlayerNameList()">导出UUID->玩家名列表</button>
+            <button class="danger" onclick="rebuildUuidTable()">一键重构UUID表</button>
 
             <div class="search-row">
                 <input type="text" id="playerSearchInput" placeholder="搜索玩家（本地缓存）" oninput="updatePlayerSearch()">
@@ -670,6 +671,32 @@
             } catch (e) {
                 allPlayers = [];
                 renderPlayerPage(1);
+                showResult('请求失败: ' + e.message, false, 'playerListResult');
+            }
+        }
+        async function rebuildUuidTable() {
+            const method = getSelectedMethod();
+            const secret = getSecret();
+            if (!method || !secret) return;
+
+            if (!confirm('确定要重构 UUID->玩家名 索引表吗？这会按当前缓存文件重新生成。')) {
+                return;
+            }
+
+            try {
+                const response = await fetch(`${method.url}/manage/rebuild-uuid`, {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ secret })
+                });
+                const result = await response.json();
+                if (result.success) {
+                    showResult(`UUID表重构完成，当前索引项：${result.count}`, true, 'playerListResult');
+                    loadPlayerList();
+                } else {
+                    showResult(result.error || 'UUID表重构失败', false, 'playerListResult');
+                }
+            } catch (e) {
                 showResult('请求失败: ' + e.message, false, 'playerListResult');
             }
         }

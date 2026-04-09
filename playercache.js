@@ -17,20 +17,109 @@ function checkName(name) {
     if (name.search(/\</) != -1) return false;
     return true;
 }
+function normalizeUUID(uuid) {
+    if (uuid == null) return null;
+    return (uuid + "").toLowerCase().replace(/-/g, "");
+}
+function getUUIDKeys(uuid) {
+    let raw = uuid == null ? null : (uuid + "").toLowerCase();
+    let normalized = normalizeUUID(uuid);
+    if (raw == null || normalized == null) return [];
+    if (raw === normalized) return [normalized];
+    return [raw, normalized];
+}
 function class_PlayerCache(path) {
     this.path = path;
     this.UUIDCache = {};
-    this.lookup_uuid = function (uuid) {
-        return this.UUIDCache[uuid];
-    }
-    this.cacheUUID = function (player, uuid) {
-        this.UUIDCache[uuid] = player;
-        log(`[UUID_CACHE] Cache uuid ${uuid} for ${player}`);
+    this.persistUUIDCache = function () {
         try {
             fs.writeFileSync(this.path + "/a.ud.json", JSON.stringify(this.UUIDCache, null, 0));
+            return true;
         } catch (e) {
             console.error(e);
         }
+        return false;
+    }
+    this.rebuildUUIDCacheFromFiles = function (overwriteConflict = false) {
+        let changed = false;
+        try {
+            let files = fs.readdirSync(this.path);
+            for (let file of files) {
+                if (!file.endsWith('.json') || file === 'a.ud.json') continue;
+                let playerName = file.substring(0, file.length - 5);
+                if (!checkName(playerName)) continue;
+                try {
+                    let data = JSON.parse(fs.readFileSync(this.path + "/" + file));
+                    if (!data || !data.uuid) continue;
+                    let keys = getUUIDKeys(data.uuid);
+                    for (let key of keys) {
+                        let cachedPlayer = this.UUIDCache[key];
+                        if (cachedPlayer == undefined) {
+                            this.UUIDCache[key] = playerName;
+                            changed = true;
+                        } else if (cachedPlayer != playerName && overwriteConflict === true) {
+                            this.UUIDCache[key] = playerName;
+                            changed = true;
+                        }
+                    }
+                } catch (e) {
+                    console.error(e);
+                }
+            }
+        } catch (e) {
+            console.error(e);
+        }
+        if (changed) {
+            log(`[UUID_CACHE] Repaired UUID index for cache path ${this.path}`);
+            this.persistUUIDCache();
+        }
+        return changed;
+    }
+    this.rebuildUUIDCache = function (overwriteConflict = false) {
+        this.UUIDCache = {};
+        this.rebuildUUIDCacheFromFiles(overwriteConflict);
+        return Object.keys(this.UUIDCache).length;
+    }
+    this.lookup_uuid = function (uuid) {
+        let keys = getUUIDKeys(uuid);
+        for (let key of keys) {
+            let mapped = this.UUIDCache[key];
+            if (mapped != undefined) return mapped;
+        }
+        let target = normalizeUUID(uuid);
+        if (target == null) return undefined;
+        try {
+            let files = fs.readdirSync(this.path);
+            for (let file of files) {
+                if (!file.endsWith('.json') || file === 'a.ud.json') continue;
+                let playerName = file.substring(0, file.length - 5);
+                try {
+                    let data = JSON.parse(fs.readFileSync(this.path + "/" + file));
+                    if (data && normalizeUUID(data.uuid) === target) {
+                        this.cacheUUID(playerName, data.uuid);
+                        return playerName;
+                    }
+                } catch (e) {
+                    console.error(e);
+                }
+            }
+        } catch (e) {
+            console.error(e);
+        }
+        return undefined;
+    }
+    this.cacheUUID = function (player, uuid) {
+        let keys = getUUIDKeys(uuid);
+        if (keys.length <= 0) return false;
+        for (let key of keys) {
+            this.UUIDCache[key] = player;
+        }
+        if (this.persistUUIDCache()) {
+            log(`[UUID_CACHE] Cache uuid ${keys[0]} for ${player}`);
+            return true;
+        }
+        console.error(`[UUID_CACHE] Failed to persist uuid ${keys[0]} for ${player}`);
+        return false;
     }
     this.lookup = function (player) {
         if (!checkName(player)) return false;
@@ -257,8 +346,11 @@ function class_PlayerCache(path) {
             let content = fs.readFileSync(this.path + "/" + player + ".json");
             let data = JSON.parse(content);
             if (data.uuid) {
-                delete this.UUIDCache[data.uuid];
-                fs.writeFileSync(this.path + "/a.ud.json", JSON.stringify(this.UUIDCache, null, 0));
+                let keys = getUUIDKeys(data.uuid);
+                for (let key of keys) {
+                    delete this.UUIDCache[key];
+                }
+                this.persistUUIDCache();
             }
             fs.rmSync(this.path + "/" + player + ".json");
             return true;
@@ -276,9 +368,11 @@ function class_PlayerCache(path) {
         } else {
             this.UUIDCache = {};
         }
+        this.rebuildUUIDCacheFromFiles(false);
     } catch (e) {
         console.error(e);
         this.UUIDCache = {};
+        this.rebuildUUIDCacheFromFiles(false);
     }
 }
 module.exports = {

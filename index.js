@@ -60,6 +60,7 @@ for (let i = 0; i < HANDLES.length; i++) {
     mApp.post(`${url}/manage/bans`, function (req, res) { urlHandle_manage_bans(req, res, idx) });
     mApp.post(`${url}/manage/modify/:player`, function (req, res) { urlHandle_manage_modify(req, res, idx) });
     mApp.post(`${url}/manage/delete/:player`, function (req, res) { urlHandle_manage_delete(req, res, idx) });
+    mApp.post(`${url}/manage/rebuild-uuid`, function (req, res) { urlHandle_manage_rebuild_uuid(req, res, idx) });
 
 }
 // 皮肤站处理开始
@@ -813,6 +814,37 @@ function urlHandle_manage_delete(req, res, from) {
             } else {
                 res.status(404).send({ "error": "Player not found in cache" }).end();
             }
+        } catch (e) {
+            console.error(e);
+            res.status(400).send({ "error": "Invalid request" }).end();
+        }
+    });
+}
+function urlHandle_manage_rebuild_uuid(req, res, from) {
+    let handle = HANDLES[from];
+    let secret = handle.secret;
+
+    if (!secret) {
+        res.status(403).send({ "error": "Secret key not configured for this endpoint" }).end();
+        return;
+    }
+
+    let body = '';
+    req.on('data', (chunk) => {
+        body += chunk;
+    });
+
+    req.on('end', () => {
+        try {
+            let data = JSON.parse(body);
+            if (data.secret !== secret) {
+                res.status(403).send({ "error": "Invalid secret key" }).end();
+                return;
+            }
+
+            let count = PlayerCaches[from].rebuildUUIDCache(false);
+            log(`[MANAGE] Rebuilt UUID cache table for <${handle.name || 'default'}>, current entries: ${count}`);
+            res.send({ "success": true, "count": count }).end();
         } catch (e) {
             console.error(e);
             res.status(400).send({ "error": "Invalid request" }).end();
