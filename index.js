@@ -386,7 +386,7 @@ function urlHandle_profiles(req, res, from) {
     if (profile_name == null) {
         log("[PROFILE] Looking up for " + url + " from <Original>");
 
-        Fetch("https://api.minecraftservices.com/minecraft/profile/lookup/name/" + url).then(data => {
+        Fetch("https://sessionserver.mojang.com/session/minecraft/profile/" + url).then(data => {
             res.status(data.status);
             return data.text()
         }).then(data => {
