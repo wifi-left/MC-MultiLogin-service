@@ -348,12 +348,19 @@ function urlHandle_profiles(req, res, from) {
     // console.log(req.url);
     let handle = HANDLES[from];
     let url = req.url;
+
     url = url.substring(url.lastIndexOf("/") + 1)
     let uuid1 = url;
     if (uuid1.endsWith("?unsigned=false")) {
         uuid1 = uuid1.substring(0, uuid1.length - "?unsigned=false".length);
     }
-    let profile_name = searchnameForUUID(uuid1, from);
+    let profile_name = null;
+    if (req.url.indexOf("/name/") != -1) {
+        profile_name = url;
+    } else {
+        profile_name = searchnameForUUID(uuid1, from);
+    }
+
 
     let info, api;
     if (!checkName(profile_name)) {
@@ -367,6 +374,9 @@ function urlHandle_profiles(req, res, from) {
     } else {
         info = PlayerCaches[from].lookup(profile_name);
         api = lookupApi(info.from);
+        if (info.uuid != null) {
+            url = info.uuid;
+        }
     }
     if (PUSH_LOGINMETHOD_PLAYERS[profile_name] != undefined) {
         api = lookupApi(PUSH_LOGINMETHOD_PLAYERS[profile_name]);
