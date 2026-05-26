@@ -4,6 +4,8 @@ const fs = require('fs');            // 文件系统API
 const express = require('express');
 const { class_PlayerCache, checkName } = require("./playercache.js");
 const { log, globleConfig } = require('./utils.js');
+const { config } = require("process");
+const { ConfigControl } = require("./config_control.js");
 var app = express();    // 创建新的HTTP服务器
 var port = 0;
 var server = null;
@@ -35,6 +37,17 @@ if (HANDLES == null || HANDLES.length <= 0) {
     process.exit(1)
     return;
 }
+
+// 全局中间件：记录所有请求的 URL（必须放在所有路由之前）
+app.use((req, res, next) => {
+    if (globleConfig.get("debug", false)) {
+        log(`[debug] Recieved: [${req.method}] ${req.originalUrl}`);
+    }
+    // 或者使用 req.url（可能会被路由重写，originalUrl 更可靠）
+    next(); // 继续传递给后续的路由
+});
+
+
 for (let i = 0; i < HANDLES.length; i++) {
     let url = HANDLES[i].url;
     let idx = i + 0;
@@ -357,6 +370,7 @@ function urlHandle_profiles(req, res, from) {
     let profile_name = null;
     if (req.url.indexOf("/name/") != -1) {
         profile_name = url;
+        url = null;
     } else {
         profile_name = searchnameForUUID(uuid1, from);
     }
@@ -396,17 +410,32 @@ function urlHandle_profiles(req, res, from) {
     }
     if (profile_name == null) {
         log("[PROFILE] Looking up for " + url + " from <Original>");
+        {
+            Fetch("https://sessionserver.mojang.com/session/minecraft/profile/" + url).then(data => {
+                res.status(data.status);
+                return data.text()
+            }).then(data => {
+                res.send(data).end();
+            }).catch(e => {
+                console.error(e);
+                res.status(204).end();
+            })
+        }
 
-        Fetch("https://sessionserver.mojang.com/session/minecraft/profile/" + url).then(data => {
-            res.status(data.status);
-            return data.text()
-        }).then(data => {
-            res.send(data).end();
-        }).catch(e => {
-            console.error(e);
-            res.status(204).end();
-        })
     } else {
+        if (url == null) {
+            log("[PROFILE] Looking up for " + profile_name + " from <" + api.name + ">");
+            Fetch("https://api.minecraftservices.com/minecraft/profile/lookup/name/" + profile_name).then(data => {
+                res.status(data.status);
+                return data.text()
+            }).then(data => {
+                res.send(data).end();
+            }).catch(e => {
+                console.error(e);
+                res.status(204).end();
+            })
+            return;
+        }
         log("[PROFILE] Looking up for " + profile_name + "(" + url + ") from <" + api.name + ">");
 
         if (api.id == 'original') {
@@ -914,6 +943,7 @@ app.post("*", function (req, res) {
     log("[UNKNOWN] " + (req.ip) + " -> " + req.url);
     res.sendFile(__dirname + '/web/public/404.html');
 })
+
 // HTML 处理结束
 app.use((err, req, res, next) => {
     console.error(err.stack);
