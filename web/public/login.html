@@ -1,0 +1,480 @@
+<!DOCTYPE html>
+<html lang="zh">
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>登录 - MC-MultiLogin 管理面板</title>
+    <style>
+        :root {
+            --bg: #f3f5f9;
+            --bg-card: #ffffff;
+            --bg-soft: #f0f2f7;
+            --bg-hover: #e9edf5;
+            --bg-input: #ffffff;
+            --text: #1f2430;
+            --text-2: #6b7280;
+            --border: #e2e6ee;
+            --primary: #2f6fed;
+            --primary-hover: #1f5cd0;
+            --primary-soft: #e8effd;
+            --danger: #dc2626;
+            --danger-soft: #fdeaea;
+            --shadow: 0 1px 3px rgba(16, 24, 40, .07);
+            --shadow-lg: 0 10px 30px rgba(16, 24, 40, .16);
+            --radius: 12px;
+        }
+        [data-theme="dark"] {
+            --bg: #0f1218;
+            --bg-card: #191e27;
+            --bg-soft: #222836;
+            --bg-hover: #2a3140;
+            --bg-input: #14181f;
+            --text: #e6e9ef;
+            --text-2: #98a2b3;
+            --border: #2c3444;
+            --primary: #4d8dff;
+            --primary-hover: #6ea1ff;
+            --primary-soft: #1d2c4d;
+            --danger: #f87171;
+            --danger-soft: #3a1d1d;
+            --shadow: 0 1px 3px rgba(0, 0, 0, .4);
+            --shadow-lg: 0 10px 30px rgba(0, 0, 0, .55);
+        }
+
+        * {
+            box-sizing: border-box;
+        }
+        body {
+            margin: 0;
+            min-height: 100vh;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            background: var(--bg);
+            color: var(--text);
+            font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", "PingFang SC", "Microsoft YaHei", Roboto, Arial, sans-serif;
+            padding: 20px;
+        }
+        .login-wrap {
+            width: 100%;
+            max-width: 400px;
+        }
+        .card {
+            background: var(--bg-card);
+            border: 1px solid var(--border);
+            border-radius: var(--radius);
+            padding: 30px 28px;
+            box-shadow: var(--shadow-lg);
+        }
+        .logo {
+            width: 52px;
+            height: 52px;
+            border-radius: 14px;
+            background: linear-gradient(135deg, var(--primary), #7c3aed);
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-size: 26px;
+            margin: 0 auto 14px;
+            color: #fff;
+        }
+        h1 {
+            margin: 0 0 4px;
+            font-size: 20px;
+            text-align: center;
+        }
+        .sub {
+            margin: 0 0 24px;
+            text-align: center;
+            color: var(--text-2);
+            font-size: 13px;
+        }
+        .field {
+            display: flex;
+            flex-direction: column;
+            gap: 6px;
+            margin-bottom: 14px;
+        }
+        .field label {
+            font-size: 12px;
+            color: var(--text-2);
+            font-weight: 600;
+        }
+        input[type="password"],
+        select {
+            width: 100%;
+            padding: 9px 12px;
+            border: 1px solid var(--border);
+            border-radius: 9px;
+            background: var(--bg-input);
+            color: var(--text);
+            font-size: 14px;
+            transition: border-color .15s, box-shadow .15s;
+        }
+        input:focus,
+        select:focus {
+            outline: none;
+            border-color: var(--primary);
+            box-shadow: 0 0 0 3px var(--primary-soft);
+        }
+        .input-wrap {
+            position: relative;
+            display: flex;
+            align-items: center;
+        }
+        .input-wrap input {
+            padding-right: 40px;
+        }
+        .input-append {
+            position: absolute;
+            right: 4px;
+            border: none;
+            background: transparent;
+            cursor: pointer;
+            font-size: 15px;
+            padding: 6px 9px;
+            border-radius: 6px;
+            color: var(--text-2);
+        }
+        .input-append:hover {
+            background: var(--bg-hover);
+        }
+        .remember {
+            display: flex;
+            align-items: center;
+            gap: 6px;
+            font-size: 13px;
+            color: var(--text-2);
+            cursor: pointer;
+            margin-bottom: 16px;
+        }
+        .remember input {
+            width: auto;
+        }
+        .btn {
+            width: 100%;
+            padding: 10px 16px;
+            border: none;
+            border-radius: 9px;
+            background: var(--primary);
+            color: #fff;
+            font-size: 15px;
+            font-weight: 600;
+            cursor: pointer;
+            transition: background .15s, transform .05s;
+        }
+        .btn:hover {
+            background: var(--primary-hover);
+        }
+        .btn:active {
+            transform: scale(.99);
+        }
+        .btn:disabled {
+            opacity: .6;
+            cursor: not-allowed;
+        }
+        .btn.loading::before {
+            content: "";
+            display: inline-block;
+            width: 13px;
+            height: 13px;
+            margin-right: 7px;
+            vertical-align: -2px;
+            border: 2px solid rgba(255, 255, 255, .4);
+            border-top-color: #fff;
+            border-radius: 50%;
+            animation: spin .7s linear infinite;
+        }
+        @keyframes spin {
+            to {
+                transform: rotate(360deg);
+            }
+        }
+        .error-box {
+            display: none;
+            margin-bottom: 14px;
+            padding: 10px 12px;
+            border-radius: 9px;
+            background: var(--danger-soft);
+            color: var(--danger);
+            font-size: 13px;
+            border: 1px solid var(--danger);
+        }
+        .error-box.show {
+            display: block;
+        }
+        .hint {
+            margin: 16px 0 0;
+            font-size: 12px;
+            color: var(--text-2);
+            text-align: center;
+            line-height: 1.7;
+        }
+        .saved-section {
+            margin-top: 22px;
+            border-top: 1px solid var(--border);
+            padding-top: 14px;
+        }
+        .saved-title {
+            font-size: 13px;
+            font-weight: 600;
+            color: var(--text-2);
+            margin-bottom: 10px;
+        }
+        .account-chip {
+            display: flex;
+            align-items: center;
+            gap: 8px;
+            padding: 9px 12px;
+            border: 1px solid var(--border);
+            border-radius: 9px;
+            margin-bottom: 8px;
+            background: var(--bg-soft);
+        }
+        .account-chip:hover {
+            background: var(--bg-hover);
+        }
+        .account-main {
+            flex: 1;
+            font-size: 14px;
+            font-weight: 600;
+            min-width: 0;
+        }
+        .account-sub {
+            font-size: 12px;
+            color: var(--text-2);
+            font-family: "JetBrains Mono", Consolas, monospace;
+            overflow: hidden;
+            text-overflow: ellipsis;
+            white-space: nowrap;
+        }
+        .chip-btn {
+            border: none;
+            background: var(--primary);
+            color: #fff;
+            border-radius: 7px;
+            padding: 5px 14px;
+            font-size: 13px;
+            font-weight: 600;
+            cursor: pointer;
+            flex: 0 0 auto;
+        }
+        .chip-btn:hover {
+            background: var(--primary-hover);
+        }
+        .chip-del {
+            border: none;
+            background: transparent;
+            color: var(--text-2);
+            font-size: 13px;
+            cursor: pointer;
+            padding: 4px 6px;
+            border-radius: 6px;
+            flex: 0 0 auto;
+        }
+        .chip-del:hover {
+            background: var(--danger-soft);
+            color: var(--danger);
+        }
+    </style>
+</head>
+
+<body>
+    <div class="login-wrap">
+        <div class="card">
+            <div class="logo">⛏</div>
+            <h1>MC-MultiLogin</h1>
+            <p class="sub">管理面板登录</p>
+
+            <div class="field">
+                <label for="methodSelect">子配置</label>
+                <select id="methodSelect">
+                    <option value="">-- 选择子配置 --</option>
+                </select>
+            </div>
+
+            <div class="field">
+                <label for="secretKey">管理密钥</label>
+                <div class="input-wrap">
+                    <input type="password" id="secretKey" autocomplete="current-password" placeholder="输入该子配置的 secret">
+                    <button type="button" id="secretToggle" class="input-append" title="显示 / 隐藏密钥">👁</button>
+                </div>
+            </div>
+
+            <label class="remember">
+                <input type="checkbox" id="saveAccount" checked> 保存账号与密码（下次一键登录）
+            </label>
+            <label class="remember">
+                <input type="checkbox" id="rememberMe"> 记住我（7 天内免登录）
+            </label>
+
+            <div id="errorBox" class="error-box"></div>
+
+            <button id="loginBtn" class="btn">登 录</button>
+
+            <div id="savedSection" class="saved-section" style="display:none;">
+                <div class="saved-title">已保存的账号</div>
+                <div id="savedList"></div>
+            </div>
+
+            <p class="hint">登录后即可进入管理面板管理该子配置。<br>请通过 HTTPS 访问，避免密钥在网络中明文传输。<br>保存的账号密码以明文存于本机浏览器，请勿在公共电脑勾选"保存账号与密码"。</p>
+        </div>
+    </div>
+
+    <script>
+        'use strict';
+        const $ = id => document.getElementById(id);
+        const METHOD_URL = location.pathname.replace(/\/+$/, '') || '/manage';
+        const ACCOUNTS_KEY = 'ml_admin_accounts';
+        let methods = [];
+
+        function loadAccounts() {
+            try { return JSON.parse(localStorage.getItem(ACCOUNTS_KEY) || '[]'); } catch (e) { return []; }
+        }
+        function saveAccounts(list) { localStorage.setItem(ACCOUNTS_KEY, JSON.stringify(list)); }
+        function upsertAccount(acc) {
+            const list = loadAccounts().filter(a => a.url !== acc.url);
+            list.unshift(acc);
+            saveAccounts(list);
+        }
+        function removeAccount(url) {
+            saveAccounts(loadAccounts().filter(a => a.url !== url));
+            renderSaved();
+        }
+
+        function renderSaved() {
+            const list = loadAccounts();
+            const section = $('savedSection');
+            const wrap = $('savedList');
+            wrap.innerHTML = '';
+            section.style.display = list.length ? '' : 'none';
+            list.forEach(acc => {
+                const chip = document.createElement('div');
+                chip.className = 'account-chip';
+                const main = document.createElement('div');
+                main.className = 'account-main';
+                main.textContent = acc.name || 'default';
+                const sub = document.createElement('div');
+                sub.className = 'account-sub';
+                sub.textContent = acc.url;
+                main.appendChild(sub);
+                const btn = document.createElement('button');
+                btn.type = 'button';
+                btn.className = 'chip-btn';
+                btn.textContent = '登录';
+                btn.onclick = () => loginAs(acc);
+                const del = document.createElement('button');
+                del.type = 'button';
+                del.className = 'chip-del';
+                del.title = '删除该账号';
+                del.textContent = '✕';
+                del.onclick = () => { if (confirm('删除已保存的账号 ' + acc.url + '？')) removeAccount(acc.url); };
+                chip.appendChild(main);
+                chip.appendChild(btn);
+                chip.appendChild(del);
+                wrap.appendChild(chip);
+            });
+        }
+
+        function loginAs(acc) {
+            const idx = methods.findIndex(m => m.url === acc.url);
+            if (idx < 0) { showError('该子配置已不在当前配置中'); return; }
+            $('methodSelect').value = String(idx);
+            $('secretKey').value = acc.secret;
+            $('saveAccount').checked = true;
+            doLogin();
+        }
+
+        function applyTheme() {
+            document.documentElement.dataset.theme =
+                window.matchMedia('(prefers-color-scheme: dark)').matches ? 'dark' : 'light';
+        }
+        applyTheme();
+        window.matchMedia('(prefers-color-scheme: dark)').addEventListener('change', applyTheme);
+
+        $('secretToggle').addEventListener('click', () => {
+            const input = $('secretKey');
+            const show = input.type === 'password';
+            input.type = show ? 'text' : 'password';
+            $('secretToggle').textContent = show ? '🙈' : '👁';
+        });
+
+        async function loadMethods() {
+            try {
+                const resp = await fetch('/api/methods');
+                if (!resp.ok) throw new Error('HTTP ' + resp.status);
+                methods = await resp.json();
+                const select = $('methodSelect');
+                methods.forEach((m, idx) => {
+                    const opt = document.createElement('option');
+                    opt.value = String(idx);
+                    opt.textContent = `${m.name || 'default'} (${m.url})`;
+                    select.appendChild(opt);
+                });
+            } catch (e) {
+                showError('无法加载子配置列表: ' + e.message);
+            }
+        }
+
+        function showError(msg) {
+            const box = $('errorBox');
+            box.textContent = msg;
+            box.classList.add('show');
+        }
+
+        function setLoading(on) {
+            $('loginBtn').disabled = on;
+            $('loginBtn').classList.toggle('loading', on);
+        }
+
+        async function doLogin() {
+            const idx = $('methodSelect').value;
+            if (idx === '') { showError('请选择子配置'); return; }
+            const method = methods[idx];
+            const secret = $('secretKey').value.trim();
+            if (!secret) { showError('请输入管理密钥'); return; }
+
+            setLoading(true);
+            $('errorBox').classList.remove('show');
+            try {
+                const resp = await fetch(METHOD_URL + '/login', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ url: method.url, secret: secret, remember: $('rememberMe').checked })
+                });
+                let data = null;
+                try { data = await resp.json(); } catch (e) { /* 非 JSON */ }
+                if (!resp.ok) {
+                    if (resp.status === 429) showError('尝试过于频繁，请稍后再试');
+                    else showError((data && data.error) || ('登录失败 (' + resp.status + ')'));
+                    return;
+                }
+                // 登录成功：需要时保存账号，随后进入管理主页面
+                if ($('saveAccount').checked) {
+                    upsertAccount({
+                        url: method.url,
+                        name: method.name || 'default',
+                        secret: secret,
+                        remember: $('rememberMe').checked
+                    });
+                }
+                sessionStorage.setItem('ml_admin_creds', JSON.stringify({ url: method.url, secret: secret }));
+                location.href = METHOD_URL;
+            } catch (e) {
+                showError('请求失败: ' + e.message);
+            } finally {
+                setLoading(false);
+            }
+        }
+
+        $('loginBtn').addEventListener('click', doLogin);
+        $('secretKey').addEventListener('keydown', e => { if (e.key === 'Enter') doLogin(); });
+        $('methodSelect').addEventListener('change', () => $('errorBox').classList.remove('show'));
+
+        loadMethods();
+        renderSaved();
+    </script>
+</body>
+
+</html>

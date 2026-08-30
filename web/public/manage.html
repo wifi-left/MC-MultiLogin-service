@@ -6,1246 +6,2275 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>MC-MultiLogin 管理面板</title>
     <style>
+        /* ============ 主题变量 ============ */
+        :root {
+            --bg: #f3f5f9;
+            --bg-card: #ffffff;
+            --bg-soft: #f0f2f7;
+            --bg-hover: #e9edf5;
+            --bg-input: #ffffff;
+            --text: #1f2430;
+            --text-2: #6b7280;
+            --border: #e2e6ee;
+            --primary: #2f6fed;
+            --primary-hover: #1f5cd0;
+            --primary-soft: #e8effd;
+            --success: #16a34a;
+            --success-soft: #e5f6eb;
+            --danger: #dc2626;
+            --danger-hover: #b91c1c;
+            --danger-soft: #fdeaea;
+            --warning: #d97706;
+            --warning-soft: #fdf2e2;
+            --info: #0e7490;
+            --shadow: 0 1px 3px rgba(16, 24, 40, .07);
+            --shadow-lg: 0 10px 30px rgba(16, 24, 40, .16);
+            --radius: 10px;
+        }
+        [data-theme="dark"] {
+            --bg: #0f1218;
+            --bg-card: #191e27;
+            --bg-soft: #222836;
+            --bg-hover: #2a3140;
+            --bg-input: #14181f;
+            --text: #e6e9ef;
+            --text-2: #98a2b3;
+            --border: #2c3444;
+            --primary: #4d8dff;
+            --primary-hover: #6ea1ff;
+            --primary-soft: #1d2c4d;
+            --success: #34d399;
+            --success-soft: #123326;
+            --danger: #f87171;
+            --danger-hover: #fca5a5;
+            --danger-soft: #3a1d1d;
+            --warning: #fbbf24;
+            --warning-soft: #3a2c12;
+            --info: #22d3ee;
+            --shadow: 0 1px 3px rgba(0, 0, 0, .4);
+            --shadow-lg: 0 10px 30px rgba(0, 0, 0, .55);
+        }
+
+        * {
+            box-sizing: border-box;
+        }
+        html {
+            scroll-behavior: smooth;
+        }
         body {
-            font-family: Arial, sans-serif;
-            max-width: 1200px;
-            margin: 0 auto;
-            padding: 20px;
-            background-color: #f5f5f5;
+            margin: 0;
+            font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", "PingFang SC", "Microsoft YaHei", Roboto, Arial, sans-serif;
+            background: var(--bg);
+            color: var(--text);
+            transition: background .25s, color .25s;
+        }
+        code,
+        pre,
+        .mono {
+            font-family: "JetBrains Mono", Consolas, "Courier New", monospace;
         }
 
-        h1 {
-            color: #333;
+        /* ============ 顶部栏 ============ */
+        .topbar {
+            position: sticky;
+            top: 0;
+            z-index: 50;
+            display: flex;
+            align-items: center;
+            gap: 12px;
+            padding: 12px 24px;
+            background: var(--bg-card);
+            border-bottom: 1px solid var(--border);
+            box-shadow: var(--shadow);
         }
-
-        .config-section {
-            background: white;
-            padding: 20px;
-            margin-bottom: 20px;
+        .brand {
+            display: flex;
+            align-items: center;
+            gap: 10px;
+            font-size: 18px;
+            font-weight: 700;
+        }
+        .brand .logo {
+            width: 30px;
+            height: 30px;
             border-radius: 8px;
-            box-shadow: 0 2px 4px rgba(0, 0, 0, 0.1);
+            background: linear-gradient(135deg, var(--primary), #7c3aed);
+            display: inline-flex;
+            align-items: center;
+            justify-content: center;
+            color: #fff;
+            font-size: 16px;
+        }
+        .brand-sub {
+            font-size: 13px;
+            font-weight: 500;
+            color: var(--text-2);
+            margin-left: 4px;
+        }
+        .topbar-actions {
+            margin-left: auto;
+            display: flex;
+            align-items: center;
+            gap: 10px;
+        }
+        .conn-badge {
+            display: inline-flex;
+            align-items: center;
+            gap: 6px;
+            font-size: 13px;
+            padding: 5px 12px;
+            border-radius: 999px;
+            background: var(--bg-soft);
+            color: var(--text-2);
+            border: 1px solid var(--border);
+        }
+        .conn-badge .dot {
+            width: 8px;
+            height: 8px;
+            border-radius: 50%;
+            background: #9ca3af;
+        }
+        .conn-badge.ok {
+            color: var(--success);
+            border-color: var(--success);
+            background: var(--success-soft);
+        }
+        .conn-badge.ok .dot {
+            background: var(--success);
+        }
+        .conn-badge.err {
+            color: var(--danger);
+            border-color: var(--danger);
+            background: var(--danger-soft);
+        }
+        .conn-badge.err .dot {
+            background: var(--danger);
         }
 
-        .form-group {
-            margin-bottom: 15px;
+        /* ============ 通用卡片与布局 ============ */
+        .card {
+            background: var(--bg-card);
+            border: 1px solid var(--border);
+            border-radius: var(--radius);
+            padding: 18px 20px;
+            margin-bottom: 16px;
+            box-shadow: var(--shadow);
+        }
+        .card h3 {
+            margin: 0 0 12px;
+            font-size: 15px;
+            display: flex;
+            align-items: center;
+            gap: 8px;
+        }
+        .grid-2 {
+            display: grid;
+            grid-template-columns: 1fr 1fr;
+            gap: 16px;
+        }
+        @media (max-width: 900px) {
+            .grid-2 {
+                grid-template-columns: 1fr;
+            }
+        }
+        .main {
+            max-width: 1280px;
+            margin: 0 auto;
+            padding: 20px 24px 60px;
         }
 
-        label {
-            display: block;
-            margin-bottom: 5px;
-            font-weight: bold;
-            color: #555;
+        /* ============ 配置栏 / 会话栏 ============ */
+        .config-bar {
+            display: flex;
+            align-items: center;
+            gap: 16px;
+            flex-wrap: wrap;
+        }
+        .session-info {
+            display: flex;
+            align-items: center;
+            gap: 10px;
+            flex-wrap: wrap;
+            font-size: 14px;
+        }
+        .session-info code {
+            font-size: 12.5px;
         }
 
-        input,
+        /* ============ 表单控件 ============ */
+        input[type="text"],
+        input[type="password"],
+        input[type="number"],
+        input[type="datetime-local"],
         select,
         textarea {
             width: 100%;
-            padding: 8px;
-            border: 1px solid #ddd;
-            border-radius: 4px;
-            box-sizing: border-box;
-            color: #333;
-            /* 修复文本颜色 */
-            background-color: #fff;
-            /* 避免系统主题导致对比度异常 */
+            padding: 8px 12px;
+            border: 1px solid var(--border);
+            border-radius: 8px;
+            background: var(--bg-input);
+            color: var(--text);
+            font-size: 14px;
+            transition: border-color .15s, box-shadow .15s;
         }
-
-        select option {
-            color: #333;
-            /* 修复 option 文本颜色 */
-            background-color: #fff;
+        input:focus,
+        select:focus,
+        textarea:focus {
+            outline: none;
+            border-color: var(--primary);
+            box-shadow: 0 0 0 3px var(--primary-soft);
         }
-
-        button {
-            background-color: #4CAF50;
-            color: white;
-            padding: 10px 20px;
+        textarea {
+            font-family: "JetBrains Mono", Consolas, monospace;
+            resize: vertical;
+            line-height: 1.5;
+        }
+        .input-wrap {
+            position: relative;
+            display: flex;
+            align-items: center;
+        }
+        .input-wrap input {
+            padding-right: 38px;
+        }
+        .input-append {
+            position: absolute;
+            right: 4px;
             border: none;
-            border-radius: 4px;
+            background: transparent;
             cursor: pointer;
-            margin-right: 10px;
+            font-size: 15px;
+            padding: 6px 8px;
+            border-radius: 6px;
+            color: var(--text-2);
+        }
+        .input-append:hover {
+            background: var(--bg-hover);
         }
 
-        button:hover {
-            background-color: #45a049;
-        }
-
-        button.danger {
-            background-color: #f44336;
-        }
-
-        button.danger:hover {
-            background-color: #da190b;
-        }
-
-        button.secondary {
-            background-color: #008CBA;
-        }
-
-        button.secondary:hover {
-            background-color: #007399;
-        }
-
-        .result {
-            margin-top: 20px;
-            padding: 15px;
-            border-radius: 4px;
-            display: none;
-        }
-
-        .result.success {
-            background-color: #d4edda;
-            color: #155724;
-            border: 1px solid #c3e6cb;
-        }
-
-        .result.error {
-            background-color: #f8d7da;
-            color: #721c24;
-            border: 1px solid #f5c6cb;
-        }
-
-        .player-list {
-            list-style: none;
-            padding: 0;
-        }
-
-        .player-item {
-            background: #f9f9f9;
-            padding: 10px;
-            margin-bottom: 10px;
-            border-radius: 4px;
-            display: flex;
-            justify-content: space-between;
+        /* ============ 按钮 ============ */
+        .btn {
+            display: inline-flex;
             align-items: center;
-        }
-
-        .player-item:hover {
-            background: #f0f0f0;
-        }
-
-        .search-row {
-            display: flex;
-            gap: 10px;
-            margin: 12px 0;
-            align-items: center;
-        }
-
-        .search-row input {
-            flex: 1 1 auto;
-            min-width: 260px;
-            width: auto;
-            /* 覆盖全局 width:100% */
-        }
-
-        .search-row select {
-            flex: 0 0 160px;
-            width: 160px;
-            /* 固定选择框宽度，避免过长 */
-        }
-
-        .search-row button {
-            flex: 0 0 auto;
+            justify-content: center;
+            gap: 6px;
+            padding: 8px 16px;
+            border: 1px solid transparent;
+            border-radius: 8px;
+            background: var(--primary);
+            color: #fff;
+            font-size: 14px;
+            font-weight: 600;
+            cursor: pointer;
             white-space: nowrap;
+            transition: background .15s, transform .05s;
+            user-select: none;
         }
-
-        /* 小屏自适应 */
-        @media (max-width: 640px) {
-            .search-row {
-                flex-wrap: wrap;
+        .btn:hover {
+            background: var(--primary-hover);
+        }
+        .btn:active {
+            transform: scale(.98);
+        }
+        .btn:disabled {
+            opacity: .55;
+            cursor: not-allowed;
+            transform: none;
+        }
+        .btn.secondary {
+            background: var(--bg-soft);
+            color: var(--text);
+            border-color: var(--border);
+        }
+        .btn.secondary:hover {
+            background: var(--bg-hover);
+        }
+        .btn.danger {
+            background: var(--danger);
+        }
+        .btn.danger:hover {
+            background: var(--danger-hover);
+        }
+        .btn.danger.outline {
+            background: transparent;
+            color: var(--danger);
+            border-color: var(--danger);
+        }
+        .btn.danger.outline:hover {
+            background: var(--danger-soft);
+        }
+        .btn.sm {
+            padding: 4px 10px;
+            font-size: 13px;
+        }
+        .btn.loading {
+            pointer-events: none;
+            opacity: .7;
+        }
+        .btn.loading::before {
+            content: "";
+            width: 12px;
+            height: 12px;
+            margin-right: 6px;
+            border: 2px solid rgba(255, 255, 255, .4);
+            border-top-color: #fff;
+            border-radius: 50%;
+            animation: spin .7s linear infinite;
+        }
+        .btn.secondary.loading::before {
+            border-color: var(--border);
+            border-top-color: var(--text);
+        }
+        @keyframes spin {
+            to {
+                transform: rotate(360deg);
             }
-
-            .search-row input,
-            .search-row select,
-            .search-row button {
-                width: 100%;
-                flex: 1 1 100%;
-            }
+        }
+        .icon-btn {
+            display: inline-flex;
+            align-items: center;
+            justify-content: center;
+            width: 34px;
+            height: 34px;
+            border-radius: 8px;
+            border: 1px solid var(--border);
+            background: var(--bg-soft);
+            color: var(--text);
+            cursor: pointer;
+            font-size: 15px;
+        }
+        .icon-btn:hover {
+            background: var(--bg-hover);
         }
 
-        pre {
-            background: #f4f4f4;
-            padding: 15px;
-            border-radius: 4px;
-            overflow-x: auto;
-        }
-
+        /* ============ 标签页 ============ */
         .tabs {
             display: flex;
-            border-bottom: 2px solid #ddd;
-            margin-bottom: 20px;
+            gap: 4px;
+            margin: 4px 0 18px;
+            padding: 4px;
+            background: var(--bg-card);
+            border: 1px solid var(--border);
+            border-radius: 12px;
+            box-shadow: var(--shadow);
+            overflow-x: auto;
         }
-
         .tab {
-            padding: 10px 20px;
-            cursor: pointer;
+            padding: 9px 18px;
             border: none;
-            background: none;
-            margin-right: 5px;
-            color: #333;
+            background: transparent;
+            color: var(--text-2);
+            font-size: 14px;
+            font-weight: 600;
+            border-radius: 9px;
+            cursor: pointer;
+            white-space: nowrap;
+            transition: background .15s, color .15s;
         }
-
+        .tab:hover {
+            background: var(--bg-hover);
+            color: var(--text);
+        }
         .tab.active {
-            border-bottom: 3px solid #4CAF50;
-            font-weight: bold;
+            background: var(--primary-soft);
+            color: var(--primary);
         }
-
         .tab-content {
             display: none;
         }
-
         .tab-content.active {
             display: block;
+            animation: fadeIn .18s ease;
+        }
+        @keyframes fadeIn {
+            from {
+                opacity: 0;
+                transform: translateY(4px);
+            }
+            to {
+                opacity: 1;
+                transform: none;
+            }
         }
 
+        /* ============ 统计卡片 ============ */
+        .stat-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));
+            gap: 14px;
+            margin-bottom: 16px;
+        }
+        .stat-card {
+            background: var(--bg-card);
+            border: 1px solid var(--border);
+            border-radius: var(--radius);
+            padding: 16px 18px;
+            box-shadow: var(--shadow);
+        }
+        .stat-num {
+            font-size: 28px;
+            font-weight: 800;
+            color: var(--primary);
+            line-height: 1.2;
+        }
+        .stat-label {
+            margin-top: 4px;
+            font-size: 13px;
+            color: var(--text-2);
+        }
+        .stat-card.alt .stat-num {
+            color: var(--warning);
+        }
+        .stat-card.red .stat-num {
+            color: var(--danger);
+        }
+        .stat-card.green .stat-num {
+            color: var(--success);
+        }
+
+        /* ============ 表格 ============ */
+        .table-wrap {
+            overflow-x: auto;
+            border: 1px solid var(--border);
+            border-radius: 8px;
+        }
+        .data-table {
+            width: 100%;
+            border-collapse: collapse;
+            font-size: 14px;
+        }
+        .data-table th,
+        .data-table td {
+            padding: 9px 12px;
+            text-align: left;
+            border-bottom: 1px solid var(--border);
+            vertical-align: middle;
+        }
+        .data-table th {
+            background: var(--bg-soft);
+            color: var(--text-2);
+            font-size: 13px;
+            font-weight: 600;
+            white-space: nowrap;
+            user-select: none;
+        }
+        .data-table th.sortable {
+            cursor: pointer;
+        }
+        .data-table th.sortable:hover {
+            color: var(--primary);
+        }
+        .data-table tbody tr:hover {
+            background: var(--bg-hover);
+        }
+        .data-table tbody tr:last-child td {
+            border-bottom: none;
+        }
+        .data-table .col-check {
+            width: 36px;
+            text-align: center;
+        }
+        .data-table .col-check input {
+            width: auto;
+            cursor: pointer;
+        }
+        .uuid-cell {
+            font-family: "JetBrains Mono", Consolas, monospace;
+            font-size: 12.5px;
+            color: var(--text-2);
+        }
+        .actions-cell {
+            display: flex;
+            gap: 6px;
+        }
+
+        /* ============ 徽章 ============ */
+        .badge {
+            display: inline-flex;
+            align-items: center;
+            gap: 4px;
+            padding: 2px 9px;
+            border-radius: 999px;
+            font-size: 12px;
+            font-weight: 700;
+            line-height: 1.6;
+        }
+        .badge.forever {
+            background: var(--danger-soft);
+            color: var(--danger);
+        }
+        .badge.temp {
+            background: var(--warning-soft);
+            color: var(--warning);
+        }
+        .badge.none {
+            background: var(--success-soft);
+            color: var(--success);
+        }
+        .badge.from {
+            background: var(--primary-soft);
+            color: var(--primary);
+        }
+
+        /* ============ 工具条与分页 ============ */
+        .toolbar {
+            display: flex;
+            align-items: center;
+            gap: 10px;
+            flex-wrap: wrap;
+            margin-bottom: 14px;
+        }
+        .search-box {
+            display: flex;
+            gap: 8px;
+            flex: 1 1 320px;
+            max-width: 560px;
+        }
+        .search-box input {
+            flex: 1;
+        }
+        .search-box select {
+            width: 110px;
+            flex: 0 0 110px;
+        }
+        .spacer {
+            flex: 1;
+        }
         .pagination {
             display: flex;
             align-items: center;
             gap: 10px;
-            margin-top: 12px;
+            flex-wrap: wrap;
+            margin-top: 14px;
+            font-size: 13px;
+            color: var(--text-2);
+        }
+        .pagination input[type="number"] {
+            width: 64px;
+        }
+        .pagination select {
+            width: auto;
         }
 
-        .pagination button:disabled {
-            background-color: #bdbdbd;
-            cursor: not-allowed;
+        /* ============ 概览：来源分布 ============ */
+        .dist-row {
+            display: flex;
+            align-items: center;
+            gap: 10px;
+            margin-bottom: 8px;
+            font-size: 13px;
         }
-
-        #playerPageInfo {
-            color: #555;
+        .dist-label {
+            flex: 0 0 130px;
+            white-space: nowrap;
+            overflow: hidden;
+            text-overflow: ellipsis;
+        }
+        .dist-bar-wrap {
+            flex: 1;
+            height: 14px;
+            background: var(--bg-soft);
+            border-radius: 999px;
+            overflow: hidden;
+        }
+        .dist-bar {
+            height: 100%;
+            background: linear-gradient(90deg, var(--primary), #7c3aed);
+            border-radius: 999px;
+            transition: width .3s ease;
+        }
+        .dist-count {
+            flex: 0 0 48px;
+            text-align: right;
+            color: var(--text-2);
+        }
+        .quick-actions {
+            display: flex;
+            flex-wrap: wrap;
+            gap: 10px;
+        }
+        .empty {
+            padding: 24px;
+            text-align: center;
+            color: var(--text-2);
             font-size: 14px;
         }
 
-        .query-actions {
-            margin-top: 10px;
+        /* ============ 封禁表单 ============ */
+        .form-row {
             display: flex;
-            gap: 10px;
+            gap: 14px;
+            flex-wrap: wrap;
+            margin-bottom: 12px;
+            align-items: flex-end;
+        }
+        .form-row .field {
+            display: flex;
+            flex-direction: column;
+            gap: 6px;
+            flex: 1 1 200px;
+        }
+        .field label {
+            font-size: 12px;
+            color: var(--text-2);
+            font-weight: 600;
+        }
+        .radio-row {
+            display: flex;
+            gap: 16px;
+            align-items: center;
+            font-size: 14px;
+        }
+        .radio-row label {
+            display: inline-flex;
+            align-items: center;
+            gap: 5px;
+            cursor: pointer;
+            font-weight: 500;
+            color: var(--text);
+        }
+        .radio-row input[type="radio"] {
+            width: auto;
+        }
+        .dur-row {
+            display: flex;
+            align-items: center;
+            gap: 6px;
+            flex-wrap: wrap;
+        }
+        .dur-row input {
+            width: 68px;
+        }
+        .quick-durs {
+            display: flex;
+            gap: 6px;
+            flex-wrap: wrap;
+            margin: 6px 0 10px;
+        }
+        .quick-durs .btn {
+            padding: 4px 12px;
+            font-size: 13px;
         }
 
+        /* ============ 查询结果 ============ */
         .parsed-table {
             width: 100%;
             border-collapse: collapse;
-            background: #fff;
-            margin-top: 12px;
+            font-size: 14px;
         }
-
         .parsed-table th,
         .parsed-table td {
-            border: 1px solid #ddd;
-            padding: 8px 10px;
+            border: 1px solid var(--border);
+            padding: 8px 12px;
             text-align: left;
             vertical-align: top;
         }
-
         .parsed-table th {
-            width: 180px;
-            background: #f7f7f7;
-            color: #333;
+            width: 130px;
+            background: var(--bg-soft);
+            color: var(--text-2);
+            font-weight: 600;
+            font-size: 13px;
+        }
+        .copy-btn {
+            margin-left: 8px;
+            padding: 2px 8px;
+            font-size: 12px;
+            border-radius: 6px;
         }
 
-        .ban-duration-row {
+        /* ============ 弹窗 ============ */
+        .modal-overlay {
+            position: fixed;
+            inset: 0;
+            background: rgba(0, 0, 0, .45);
             display: flex;
             align-items: center;
-            gap: 6px;
-            flex-wrap: wrap;
-            margin-top: 8px;
+            justify-content: center;
+            z-index: 100;
         }
-
-        .ban-duration-row input {
-            width: 70px;
-            flex: 0 0 70px;
+        .modal-overlay.hidden {
+            display: none;
         }
-
-        .ban-duration-row span {
-            color: #555;
-            font-weight: bold;
+        .modal {
+            background: var(--bg-card);
+            border: 1px solid var(--border);
+            border-radius: 14px;
+            padding: 22px 24px;
+            width: min(420px, calc(100vw - 40px));
+            box-shadow: var(--shadow-lg);
+            animation: fadeIn .15s ease;
         }
-
-        .ban-time-mode-row {
+        .modal h3 {
+            margin: 0 0 10px;
+            font-size: 16px;
+        }
+        .modal p {
+            margin: 0 0 14px;
+            color: var(--text-2);
+            font-size: 13px;
+            line-height: 1.6;
+            word-break: break-all;
+        }
+        .modal .field {
             display: flex;
-            gap: 20px;
+            flex-direction: column;
+            gap: 6px;
+            margin-bottom: 14px;
+        }
+        .modal .field label {
+            font-size: 12px;
+            color: var(--text-2);
+            font-weight: 600;
+        }
+        .modal .remember {
+            display: inline-flex;
+            align-items: center;
+            gap: 6px;
+            font-size: 13px;
+            color: var(--text-2);
+            cursor: pointer;
             margin-bottom: 6px;
         }
-
-        .ban-list-header {
-            margin-top: 18px;
-            display: flex;
-            align-items: center;
-            gap: 10px;
-            flex-wrap: wrap;
-        }
-
-        .ban-search-row {
-            margin: 10px 0;
-            display: flex;
-            gap: 10px;
-            align-items: center;
-        }
-
-        .ban-search-row input {
-            flex: 1 1 auto;
+        .modal .remember input {
             width: auto;
-            min-width: 220px;
+        }
+        .modal-actions {
+            display: flex;
+            justify-content: flex-end;
+            gap: 10px;
         }
 
-        .ban-badge {
-            display: inline-block;
-            margin-left: 8px;
-            padding: 2px 6px;
+        /* ============ Toast ============ */
+        .toast-wrap {
+            position: fixed;
+            top: 18px;
+            right: 18px;
+            z-index: 200;
+            display: flex;
+            flex-direction: column;
+            gap: 8px;
+            pointer-events: none;
+        }
+        .toast {
+            padding: 10px 16px;
             border-radius: 10px;
-            font-size: 12px;
-            font-weight: bold;
-            color: #fff;
-            background: #ff9800;
+            font-size: 14px;
+            background: var(--bg-card);
+            border: 1px solid var(--border);
+            box-shadow: var(--shadow-lg);
+            color: var(--text);
+            max-width: 360px;
+            word-break: break-all;
+            animation: slideIn .2s ease;
+            pointer-events: auto;
+        }
+        .toast.success {
+            border-color: var(--success);
+            color: var(--success);
+        }
+        .toast.error {
+            border-color: var(--danger);
+            color: var(--danger);
+        }
+        .toast.warning {
+            border-color: var(--warning);
+            color: var(--warning);
+        }
+        .toast.out {
+            opacity: 0;
+            transform: translateX(20px);
+            transition: all .3s;
+        }
+        @keyframes slideIn {
+            from {
+                opacity: 0;
+                transform: translateX(20px);
+            }
+            to {
+                opacity: 1;
+                transform: none;
+            }
         }
 
-        .ban-badge.forever {
-            background: #d32f2f;
+        /* ============ 其它 ============ */
+        .plain-list {
+            list-style: none;
+            margin: 0;
+            padding: 0;
         }
-
-        .radio-label {
+        .plain-list li {
             display: flex;
             align-items: center;
-            gap: 6px;
-            font-weight: normal;
+            justify-content: space-between;
+            gap: 10px;
+            padding: 8px 10px;
+            border-radius: 8px;
+        }
+        .plain-list li:hover {
+            background: var(--bg-hover);
+        }
+        .hint {
+            font-size: 12px;
+            color: var(--text-2);
+            margin-top: 6px;
+        }
+        .json-ok {
+            color: var(--success);
+        }
+        .json-bad {
+            color: var(--danger);
+        }
+        .result-box {
+            margin-top: 12px;
+            padding: 12px 16px;
+            border-radius: 8px;
+            font-size: 14px;
+            display: none;
+            border: 1px solid var(--border);
+        }
+        .result-box.show {
+            display: block;
+        }
+        .result-box.success {
+            background: var(--success-soft);
+            color: var(--success);
+            border-color: var(--success);
+        }
+        .result-box.error {
+            background: var(--danger-soft);
+            color: var(--danger);
+            border-color: var(--danger);
+        }
+        details.raw-json {
+            margin-top: 12px;
+        }
+        details.raw-json summary {
             cursor: pointer;
+            color: var(--primary);
+            font-size: 14px;
+            font-weight: 600;
+            user-select: none;
+        }
+        .raw-json pre {
+            background: var(--bg-soft);
+            border: 1px solid var(--border);
+            border-radius: 8px;
+            padding: 12px;
+            overflow-x: auto;
+            font-size: 12.5px;
+            line-height: 1.6;
         }
 
-        .radio-label input[type="radio"] {
-            width: auto;
+        @media (max-width: 640px) {
+            .topbar {
+                padding: 10px 14px;
+            }
+            .main {
+                padding: 14px 12px 48px;
+            }
+            .config-item select,
+            .config-item .input-wrap {
+                min-width: 100%;
+            }
         }
     </style>
 </head>
 
 <body>
-    <h1>MC-MultiLogin 管理面板</h1>
-
-    <div class="config-section">
-        <div class="form-group">
-            <label for="methodSelect">选择子配置:</label>
-            <select id="methodSelect" onchange="onMethodChange()">
-                <option value="">-- 选择子配置 --</option>
-            </select>
+    <header class="topbar">
+        <div class="brand">
+            <span class="logo">⛏</span>
+            MC-MultiLogin <span class="brand-sub">管理面板</span>
         </div>
-        <div class="form-group">
-            <label for="secretKey">密钥:</label>
-            <input type="password" id="secretKey" placeholder="输入子配置的密钥" oninput="onSecretChange()">
+        <div class="topbar-actions">
+            <span id="connBadge" class="conn-badge"><span class="dot"></span><span id="connText">未连接</span></span>
+            <button id="themeToggle" class="icon-btn" title="切换深色 / 浅色主题">🌙</button>
         </div>
-    </div>
+    </header>
 
-    <div class="tabs">
-        <button class="tab active" onclick="switchTab('players')">玩家列表</button>
-        <button class="tab" onclick="switchTab('query')">查询玩家</button>
-        <button class="tab" onclick="switchTab('ban')">封禁管理</button>
-        <button class="tab" onclick="switchTab('modify')">修改缓存</button>
-    </div>
-
-    <div id="playersTab" class="tab-content active">
-        <div class="config-section">
-            <h2>玩家列表</h2>
-            <button onclick="loadPlayerList()">刷新列表</button>
-            <button onclick="outUuidToPlayerNameList()">导出UUID->玩家名列表</button>
-            <button class="danger" onclick="rebuildUuidTable()">一键重构UUID表</button>
-
-            <div class="search-row">
-                <input type="text" id="playerSearchInput" placeholder="搜索玩家（本地缓存）" oninput="updatePlayerSearch()">
-                <select id="playerSearchField" onchange="updatePlayerSearch()">
-                    <option value="all">全部</option>
-                    <option value="name">仅名称</option>
-                    <option value="uuid">仅 UUID</option>
-                    <option value="from">仅来源</option>
-                </select>
-                <button class="secondary" onclick="clearPlayerSearch()">重置搜索</button>
-            </div>
-
-            <div id="playerListResult" class="result"></div>
-            <ul id="playerList" class="player-list"></ul>
-
-            <div id="playerPagination" class="pagination" style="display: none;">
-                <button class="secondary" id="prevPageBtn" onclick="changePlayerPage(-1)">上一页</button>
-                <span id="playerPageInfo">第 1 / 1 页</span>
-                <button class="secondary" id="nextPageBtn" onclick="changePlayerPage(1)">下一页</button>
-            </div>
-        </div>
-    </div>
-
-    <div id="queryTab" class="tab-content">
-        <div class="config-section">
-            <h2>查询玩家信息</h2>
-            <div class="form-group">
-                <label for="queryPlayerName">玩家名称:</label>
-                <input type="text" id="queryPlayerName" placeholder="输入玩家名称">
-            </div>
-            <button onclick="queryPlayer()">查询</button>
-            <div class="query-actions">
-                <button class="secondary" id="jumpToModifyBtn" onclick="jumpToModifyFromQuery()"
-                    disabled>跳转到修改界面</button>
-            </div>
-            <div id="queryResult" class="result"></div>
-
-            <h3>解析结果</h3>
-            <div id="queryParsedWrap"></div>
-
-            <h3>原始返回</h3>
-            <pre id="queryData"></pre>
-        </div>
-    </div>
-
-    <div id="banTab" class="tab-content">
-        <div class="config-section">
-            <h2>封禁管理</h2>
-            <div class="form-group">
-                <label for="banType">封禁类型:</label>
-                <select id="banType">
-                    <option value="name">按玩家名称</option>
-                    <option value="uuid">按UUID</option>
+    <div class="main">
+        <!-- 当前登录会话 -->
+        <div class="card config-bar">
+            <div class="session-info">
+                <span class="badge from">已登录</span>
+                <span>子配置：<b id="sessionName">-</b></span>
+                <code id="sessionUrl" class="mono uuid-cell"></code>
+                <span class="hint" style="margin:0;">切换账号</span>
+                <select id="accountSwitch" style="width:auto;min-width:200px;">
+                    <option value="">-- 选择已保存的账号 --</option>
                 </select>
             </div>
-            <div class="form-group">
-                <label for="banTarget">玩家名称/UUID:</label>
-                <input type="text" id="banTarget" placeholder="输入玩家名称或UUID">
-            </div>
-            <div class="form-group">
-                <label for="banMode">封禁操作:</label>
-                <select id="banMode" onchange="updateBanUI()">
-                    <option value="temp">临时封禁</option>
-                    <option value="forever">永久封禁</option>
-                    <option value="unban">解除封禁</option>
-                </select>
-            </div>
-            <div class="form-group" id="banDurationGroup">
-                <label>封禁时长 / 结束时间:</label>
-                <div class="ban-time-mode-row">
-                    <label class="radio-label">
-                        <input type="radio" name="banTimeMode" value="duration" checked onchange="updateBanTimeMode()">
-                        输入时长
-                    </label>
-                    <label class="radio-label">
-                        <input type="radio" name="banTimeMode" value="datetime" onchange="updateBanTimeMode()"> 选择时间
-                    </label>
-                </div>
-                <div id="banDurationInputs" class="ban-duration-row">
-                    <input type="number" id="banDays" min="0" value="0" placeholder="0">
-                    <span>天</span>
-                    <input type="number" id="banHours" min="0" max="23" value="0" placeholder="0">
-                    <span>时</span>
-                    <input type="number" id="banMinutes" min="0" max="59" value="0" placeholder="0">
-                    <span>分</span>
-                    <input type="number" id="banSeconds" min="0" max="59" value="0" placeholder="0">
-                    <span>秒</span>
-                </div>
-                <div id="banDatetimeInputs" style="display:none;">
-                    <input type="datetime-local" id="banDatetime">
-                    <small>选择封禁结束的具体时间</small>
-                </div>
-            </div>
-            <div class="form-group" id="banReasonGroup">
-                <label for="banReason">封禁原因 (可选):</label>
-                <input type="text" id="banReason" placeholder="输入封禁原因（可为空）">
-            </div>
-            <button onclick="banPlayer()">执行</button>
-            <div id="banResult" class="result"></div>
+            <span class="spacer"></span>
+            <button class="btn secondary" id="addAccountBtn">➕ 添加新账号</button>
+            <button class="btn secondary" id="logoutBtn">🚪 退出登录</button>
+        </div>
 
-            <div class="ban-list-header">
-                <h3 style="margin:0;">当前封禁玩家列表</h3>
-                <button class="secondary" onclick="loadBannedPlayerList()">刷新封禁列表</button>
+        <!-- 导航 -->
+        <nav class="tabs" role="tablist">
+            <button class="tab active" data-tab="dashboard">📊 概览</button>
+            <button class="tab" data-tab="players">👥 玩家列表</button>
+            <button class="tab" data-tab="query">🔍 查询玩家</button>
+            <button class="tab" data-tab="ban">🚫 封禁管理</button>
+            <button class="tab" data-tab="modify">✏️ 缓存修改</button>
+        </nav>
+
+        <!-- ============ 概览 ============ -->
+        <section id="tab-dashboard" class="tab-content active">
+            <div class="stat-grid">
+                <div class="stat-card"><div class="stat-num" id="statTotal">-</div><div class="stat-label">玩家总数</div></div>
+                <div class="stat-card red"><div class="stat-num" id="statBanned">-</div><div class="stat-label">封禁中</div></div>
+                <div class="stat-card red"><div class="stat-num" id="statForever">-</div><div class="stat-label">永久封禁</div></div>
+                <div class="stat-card alt"><div class="stat-num" id="statTemp">-</div><div class="stat-label">临时封禁</div></div>
+                <div class="stat-card green"><div class="stat-num" id="statSources">-</div><div class="stat-label">登录来源</div></div>
             </div>
-            <div class="ban-search-row">
-                <input type="text" id="banSearchInput" placeholder="按玩家名搜索封禁列表" oninput="updateBanSearch()">
-                <button class="secondary" onclick="clearBanSearch()">重置搜索</button>
+            <div class="grid-2">
+                <div class="card">
+                    <h3>来源分布</h3>
+                    <div id="sourceDist" class="empty">尚未加载数据</div>
+                </div>
+                <div class="card">
+                    <h3>快捷操作</h3>
+                    <div class="quick-actions">
+                        <button class="btn" data-goto="query">🔍 查询玩家</button>
+                        <button class="btn" data-goto="ban">🚫 封禁管理</button>
+                        <button class="btn secondary" id="dashExport">⬇ 导出UUID映射</button>
+                        <button class="btn danger outline" id="dashRebuildUuid">♻ 重构UUID表</button>
+                    </div>
+                    <p class="hint">自动加载玩家与封禁数据用于统计，登录后随页面加载自动刷新。</p>
+                </div>
             </div>
-            <div id="banListResult" class="result"></div>
-            <ul id="bannedPlayerList" class="player-list"></ul>
+            <div class="grid-2">
+                <div class="card">
+                    <h3>最近登录 <span class="spacer"></span><button class="btn secondary sm" id="dashRefresh">刷新</button></h3>
+                    <div id="recentLogin" class="empty">尚未加载数据</div>
+                </div>
+                <div class="card">
+                    <h3>最近封禁</h3>
+                    <div id="recentBan" class="empty">尚未加载数据</div>
+                </div>
+            </div>
+        </section>
+
+        <!-- ============ 玩家列表 ============ -->
+        <section id="tab-players" class="tab-content">
+            <div class="card">
+                <div class="toolbar">
+                    <button class="btn" id="playerRefresh">刷新列表</button>
+                    <div class="search-box">
+                        <input type="text" id="playerSearch" placeholder="搜索名称 / UUID / 来源">
+                        <select id="playerSearchField">
+                            <option value="all">全部</option>
+                            <option value="name">名称</option>
+                            <option value="uuid">UUID</option>
+                            <option value="from">来源</option>
+                        </select>
+                    </div>
+                    <span class="spacer"></span>
+                    <button class="btn secondary" id="playerExportUuid">⬇ UUID映射</button>
+                    <button class="btn secondary" id="playerExportCsv">⬇ 导出CSV</button>
+                    <button class="btn danger outline" id="playerRebuildUuid">♻ 重构UUID表</button>
+                    <button class="btn danger" id="playerBatchDelete" disabled>🗑 批量删除</button>
+                </div>
+                <div class="table-wrap">
+                    <table class="data-table" id="playerTable">
+                        <thead>
+                            <tr>
+                                <th class="col-check"><input type="checkbox" id="playerCheckAll" title="全选当前页"></th>
+                                <th class="sortable" data-sort="name">名称 <span class="sort-arrow"></span></th>
+                                <th class="sortable" data-sort="uuid">UUID <span class="sort-arrow"></span></th>
+                                <th class="sortable" data-sort="from">来源 <span class="sort-arrow"></span></th>
+                                <th class="sortable" data-sort="lastLogin">最后登录 <span class="sort-arrow"></span></th>
+                                <th>状态</th>
+                                <th>操作</th>
+                            </tr>
+                        </thead>
+                        <tbody id="playerTableBody">
+                            <tr><td colspan="7" class="empty">尚未加载数据，请先在上方选择子配置并输入密钥</td></tr>
+                        </tbody>
+                    </table>
+                </div>
+                <div class="pagination">
+                    <span id="playerCount">共 0 名</span>
+                    <span class="spacer"></span>
+                    <span>每页</span>
+                    <select id="playerPageSize">
+                        <option value="10">10</option>
+                        <option value="20" selected>20</option>
+                        <option value="50">50</option>
+                        <option value="100">100</option>
+                    </select>
+                    <button class="btn secondary sm" id="playerPrev">上一页</button>
+                    <span id="playerPageInfo">第 1 / 1 页</span>
+                    <button class="btn secondary sm" id="playerNext">下一页</button>
+                    <span>跳至</span>
+                    <input type="number" id="playerPageJump" min="1" value="1">
+                    <span>页</span>
+                </div>
+            </div>
+        </section>
+
+        <!-- ============ 查询玩家 ============ -->
+        <section id="tab-query" class="tab-content">
+            <div class="card">
+                <form id="queryForm">
+                    <div class="form-row">
+                        <div class="field">
+                            <label for="queryPlayerName">玩家名称</label>
+                            <input type="text" id="queryPlayerName" placeholder="输入玩家名称">
+                        </div>
+                        <button class="btn" type="submit">查询</button>
+                        <button class="btn secondary" type="button" id="queryToModify" disabled>跳转到修改界面</button>
+                    </div>
+                </form>
+                <div class="result-box" id="queryResult"></div>
+                <h3>解析结果</h3>
+                <div id="queryParsedWrap" class="empty">查询后在此显示解析结果</div>
+                <details class="raw-json">
+                    <summary>查看原始返回 JSON</summary>
+                    <pre id="queryData"></pre>
+                </details>
+            </div>
+        </section>
+
+        <!-- ============ 封禁管理 ============ -->
+        <section id="tab-ban" class="tab-content">
+            <div class="card">
+                <form id="banForm">
+                    <div class="form-row">
+                        <div class="field">
+                            <label for="banType">封禁类型</label>
+                            <select id="banType">
+                                <option value="name">按玩家名称</option>
+                                <option value="uuid">按 UUID</option>
+                            </select>
+                        </div>
+                        <div class="field">
+                            <label for="banTarget">玩家名称 / UUID</label>
+                            <input type="text" id="banTarget" placeholder="输入玩家名称或 UUID">
+                        </div>
+                        <div class="field">
+                            <label for="banMode">封禁操作</label>
+                            <select id="banMode">
+                                <option value="temp">临时封禁</option>
+                                <option value="forever">永久封禁</option>
+                                <option value="unban">解除封禁</option>
+                            </select>
+                        </div>
+                    </div>
+                    <div id="banTimeGroup">
+                        <div class="radio-row">
+                            <label><input type="radio" name="banTimeMode" value="duration" checked> 输入时长</label>
+                            <label><input type="radio" name="banTimeMode" value="datetime"> 选择结束时间</label>
+                        </div>
+                        <div class="quick-durs">
+                            <button type="button" class="btn secondary" data-ms="3600000">1小时</button>
+                            <button type="button" class="btn secondary" data-ms="21600000">6小时</button>
+                            <button type="button" class="btn secondary" data-ms="86400000">1天</button>
+                            <button type="button" class="btn secondary" data-ms="259200000">3天</button>
+                            <button type="button" class="btn secondary" data-ms="604800000">7天</button>
+                            <button type="button" class="btn secondary" data-ms="2592000000">30天</button>
+                            <button type="button" class="btn danger" data-forever="1">永久</button>
+                        </div>
+                        <div id="banDurationInputs" class="dur-row">
+                            <input type="number" id="banDays" min="0" value="0"><span>天</span>
+                            <input type="number" id="banHours" min="0" max="23" value="0"><span>时</span>
+                            <input type="number" id="banMinutes" min="0" max="59" value="0"><span>分</span>
+                            <input type="number" id="banSeconds" min="0" max="59" value="0"><span>秒</span>
+                        </div>
+                        <div id="banDatetimeInputs" style="display:none;">
+                            <input type="datetime-local" id="banDatetime">
+                            <span class="hint">选择封禁结束的具体时间</span>
+                        </div>
+                    </div>
+                    <div class="form-row" id="banReasonRow">
+                        <div class="field">
+                            <label for="banReason">封禁原因（可选）</label>
+                            <input type="text" id="banReason" placeholder="输入封禁原因">
+                        </div>
+                        <button class="btn" type="submit" id="banExecute">执行</button>
+                    </div>
+                </form>
+            </div>
+
+            <div class="card">
+                <div class="toolbar">
+                    <h3 style="margin:0;">当前封禁玩家列表</h3>
+                    <span class="spacer"></span>
+                    <input type="text" id="banSearch" placeholder="按名称搜索封禁列表" style="max-width:240px;">
+                    <button class="btn secondary" id="banRefresh">刷新</button>
+                    <button class="btn danger" id="banBatchUnban" disabled>批量解封</button>
+                </div>
+                <div class="table-wrap">
+                    <table class="data-table" id="banTable">
+                        <thead>
+                            <tr>
+                                <th class="col-check"><input type="checkbox" id="banCheckAll" title="全选当前页"></th>
+                                <th>玩家</th>
+                                <th>原因</th>
+                                <th>开始时间</th>
+                                <th>剩余时间</th>
+                                <th>操作</th>
+                            </tr>
+                        </thead>
+                        <tbody id="banTableBody">
+                            <tr><td colspan="6" class="empty">尚未加载数据</td></tr>
+                        </tbody>
+                    </table>
+                </div>
+                <div class="pagination"><span id="banCount">共 0 人封禁中</span></div>
+            </div>
+        </section>
+
+        <!-- ============ 缓存修改 ============ -->
+        <section id="tab-modify" class="tab-content">
+            <div class="card">
+                <form id="modifyForm">
+                    <div class="form-row">
+                        <div class="field">
+                            <label for="modifyPlayerName">玩家名称</label>
+                            <input type="text" id="modifyPlayerName" placeholder="输入玩家名称">
+                        </div>
+                        <button class="btn secondary" type="button" id="modifyLoad">加载数据</button>
+                        <button class="btn" type="submit" id="modifySave">保存修改</button>
+                        <button class="btn danger" type="button" id="modifyDelete">删除玩家</button>
+                    </div>
+                </form>
+                <div class="result-box" id="modifyResult"></div>
+                <div id="modifySummary"></div>
+                <div class="form-row">
+                    <div class="field">
+                        <label for="modifyPlayerData">玩家数据（JSON）</label>
+                        <textarea id="modifyPlayerData" rows="16" spellcheck="false"
+                            placeholder='{"name": "player", "uuid": "...", ...}'></textarea>
+                        <div id="jsonHint" class="hint"></div>
+                        <span class="hint"><button type="button" class="btn secondary sm" id="modifyFormat">格式化</button>
+                            <button type="button" class="btn secondary sm" id="modifyCompact">压缩</button>
+                            <label class="remember" style="margin-left:10px;"><input type="checkbox" id="modifyPretty" checked> 缩进显示</label></span>
+                    </div>
+                </div>
+            </div>
+        </section>
+
+        <!-- ============ 确认弹窗 ============ -->
+    <div id="modalOverlay" class="modal-overlay hidden">
+        <div class="modal" role="dialog" aria-modal="true">
+            <h3 id="modalTitle">确认操作</h3>
+            <p id="modalMessage"></p>
+            <div class="modal-actions">
+                <button class="btn secondary" id="modalCancel">取消</button>
+                <button class="btn danger" id="modalConfirm">确认</button>
+            </div>
         </div>
     </div>
 
-    <div id="modifyTab" class="tab-content">
-        <div class="config-section">
-            <h2>修改玩家缓存</h2>
-            <div class="form-group">
-                <label for="modifyPlayerName">玩家名称:</label>
-                <input type="text" id="modifyPlayerName" placeholder="输入玩家名称">
+    <!-- 添加新账号对话框 -->
+    <div id="addAccountOverlay" class="modal-overlay hidden">
+        <div class="modal">
+            <h3>添加新账号</h3>
+            <p style="color:var(--text-2);font-size:13px;">登录并切换到新的子配置，不影响的当前其它已保存账号。</p>
+            <div class="field">
+                <label for="addMethodSelect">子配置</label>
+                <select id="addMethodSelect"></select>
             </div>
-            <button class="secondary" onclick="loadPlayerData()">加载数据</button>
-            <div class="form-group">
-                <label for="modifyPlayerData">玩家数据 (JSON):</label>
-                <textarea id="modifyPlayerData" rows="15"
-                    placeholder='{"name": "player", "uuid": "...", ...}'></textarea>
+            <div class="field">
+                <label for="addSecretKey">管理密钥</label>
+                <div class="input-wrap">
+                    <input type="password" id="addSecretKey" autocomplete="off" placeholder="输入该子配置的 secret">
+                    <button type="button" id="addSecretToggle" class="input-append" title="显示 / 隐藏密钥">👁</button>
+                </div>
             </div>
-            <button onclick="modifyPlayer()">保存修改</button>
-            <button class="danger" onclick="deletePlayer()">删除玩家</button>
-            <div id="modifyResult" class="result"></div>
+            <label class="remember"><input type="checkbox" id="addSaveAccount" checked> 保存到已保存账号（下次可一键登录 / 快速切换）</label>
+            <div id="addAccountError" class="result-box"></div>
+            <div class="modal-actions">
+                <button class="btn secondary" id="addAccountCancel">取消</button>
+                <button class="btn" id="addAccountConfirm">登录并切换</button>
+            </div>
         </div>
     </div>
+
+    <div id="toastWrap" class="toast-wrap"></div>
 
     <script>
-        let methodConfigs = [];
+        'use strict';
+
+        /* ==================== 主题 ==================== */
+        const $ = id => document.getElementById(id);
+        const $$ = (sel, root) => Array.from((root || document).querySelectorAll(sel));
+
+        function applyTheme(t) {
+            document.documentElement.dataset.theme = t;
+            $('themeToggle').textContent = t === 'dark' ? '☀️' : '🌙';
+        }
+        function initTheme() {
+            const saved = localStorage.getItem('ml_theme');
+            const t = saved || (window.matchMedia('(prefers-color-scheme: dark)').matches ? 'dark' : 'light');
+            applyTheme(t);
+        }
+        $('themeToggle').addEventListener('click', () => {
+            const next = document.documentElement.dataset.theme === 'dark' ? 'light' : 'dark';
+            localStorage.setItem('ml_theme', next);
+            applyTheme(next);
+        });
+
+        /* ==================== 工具函数 ==================== */
+        function esc(s) {
+            return String(s == null ? '' : s).replace(/[&<>"']/g, c => ({
+                '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;'
+            }[c]));
+        }
+        // XSS 安全构建 DOM：children 一律走 textContent / TextNode
+        function h(tag, attrs, ...children) {
+            const el = document.createElement(tag);
+            if (attrs) {
+                for (const k in attrs) {
+                    if (k === 'class') el.className = attrs[k];
+                    else if (k === 'text') el.textContent = attrs[k];
+                    else if (k.startsWith('on')) el.addEventListener(k.slice(2), attrs[k]);
+                    // 布尔属性：只有真值才设置，避免 setAttribute('checked', false) 造成误选中
+                    else if (k === 'checked' || k === 'disabled' || k === 'selected') {
+                        if (attrs[k]) el.setAttribute(k, '');
+                    }
+                    else el.setAttribute(k, attrs[k]);
+                }
+            }
+            for (const c of children) {
+                if (c == null) continue;
+                if (typeof c === 'string' || typeof c === 'number') el.appendChild(document.createTextNode(String(c)));
+                else el.appendChild(c);
+            }
+            return el;
+        }
+        function fmtTime(ms) {
+            const n = Number(ms);
+            if (!Number.isFinite(n) || n <= 0) return '-';
+            const d = new Date(n);
+            return Number.isNaN(d.getTime()) ? String(ms) : d.toLocaleString('zh-CN', { hour12: false });
+        }
+        function fmtIso(v) {
+            if (!v) return '-';
+            const d = new Date(v);
+            return Number.isNaN(d.getTime()) ? String(v) : d.toLocaleString('zh-CN', { hour12: false });
+        }
+        function fmtDuration(ms) {
+            const n = Number(ms);
+            if (!Number.isFinite(n) || n <= 0) return '';
+            const s = Math.floor(n / 1000);
+            const d = Math.floor(s / 86400), hh = Math.floor((s % 86400) / 3600), m = Math.floor((s % 3600) / 60), ss = s % 60;
+            const p = [];
+            if (d) p.push(d + '天');
+            if (hh) p.push(hh + '时');
+            if (m) p.push(m + '分');
+            if (ss || !p.length) p.push(ss + '秒');
+            return p.join('');
+        }
+        function debounce(fn, ms) {
+            let t;
+            return (...a) => { clearTimeout(t); t = setTimeout(() => fn(...a), ms); };
+        }
+        async function copyText(text) {
+            try {
+                await navigator.clipboard.writeText(text);
+            } catch (e) {
+                const ta = document.createElement('textarea');
+                ta.value = text;
+                document.body.appendChild(ta);
+                ta.select();
+                document.execCommand('copy');
+                ta.remove();
+            }
+            toast('已复制到剪贴板', 'success');
+        }
+        function downloadFile(name, content, type) {
+            const blob = new Blob([content], { type });
+            const url = URL.createObjectURL(blob);
+            const a = document.createElement('a');
+            a.href = url;
+            a.download = name;
+            document.body.appendChild(a);
+            a.click();
+            setTimeout(() => { URL.revokeObjectURL(url); a.remove(); }, 200);
+        }
+
+        /* ==================== Toast ==================== */
+        function toast(msg, type = 'info', ms = 3200) {
+            const el = h('div', { class: 'toast ' + type }, msg);
+            $('toastWrap').appendChild(el);
+            setTimeout(() => {
+                el.classList.add('out');
+                setTimeout(() => el.remove(), 320);
+            }, ms);
+        }
+
+        /* ==================== 确认弹窗 ==================== */
+        let modalResolve = null;
+        function confirmDialog({ title = '确认操作', message = '', confirmText = '确认', danger = true }) {
+            return new Promise(resolve => {
+                modalResolve = resolve;
+                $('modalTitle').textContent = title;
+                $('modalMessage').textContent = message;
+                $('modalConfirm').textContent = confirmText;
+                $('modalConfirm').className = 'btn ' + (danger ? 'danger' : '');
+                $('modalOverlay').classList.remove('hidden');
+                $('modalConfirm').focus();
+            });
+        }
+        function closeModal(result) {
+            $('modalOverlay').classList.add('hidden');
+            if (modalResolve) {
+                const r = modalResolve;
+                modalResolve = null;
+                r(result);
+            }
+        }
+        $('modalCancel').addEventListener('click', () => closeModal(false));
+        $('modalConfirm').addEventListener('click', () => closeModal(true));
+        $('modalOverlay').addEventListener('click', e => { if (e.target === $('modalOverlay')) closeModal(false); });
+        document.addEventListener('keydown', e => {
+            if (e.key === 'Escape' && !$('modalOverlay').classList.contains('hidden')) closeModal(false);
+        });
+
+        /* ==================== 状态 ==================== */
+        const state = {
+            methodConfigs: [],
+            players: [],
+            bans: [],
+            pSearch: '', pField: 'all', pSort: 'name', pSortDir: 1, pPage: 1, pPageSize: 20, pTotal: 0,
+            pSelection: new Set(),
+            bSearch: '', bSelection: new Set(),
+            queryData: null, queryName: '',
+            connected: false,
+        };
+        let currentTab = 'dashboard';
+
+        /* ==================== 登录会话凭据 ==================== */
+        const CREDS_KEY = 'ml_admin_creds';
+        const ACCOUNTS_KEY = 'ml_admin_accounts';
+        const PANEL_PATH = location.pathname.replace(/\/+$/, '') || '/manage';
+        function getCreds() {
+            try {
+                const c = JSON.parse(sessionStorage.getItem(CREDS_KEY) || 'null');
+                return (c && c.url) ? c : null;
+            } catch (e) { return null; }
+        }
+        function getSelectedMethod() {
+            const creds = getCreds();
+            if (!creds) return null;
+            return state.methodConfigs.find(m => m.url === creds.url) || null;
+        }
+        function getSecretValue() {
+            const c = getCreds();
+            return c ? (c.secret || '') : '';
+        }
+        function loadAccounts() {
+            try { return JSON.parse(localStorage.getItem(ACCOUNTS_KEY) || '[]'); } catch (e) { return []; }
+        }
+        function renderAccountSwitch() {
+            const sel = $('accountSwitch');
+            const creds = getCreds();
+            const list = loadAccounts();
+            sel.innerHTML = '';
+            list.forEach(acc => {
+                sel.appendChild(h('option', { value: acc.url, text: `${acc.name || 'default'} (${acc.url})` }));
+            });
+            sel.value = (creds && list.some(a => a.url === creds.url)) ? creds.url : '';
+        }
 
         async function loadMethodConfigs() {
             try {
-                const response = await fetch('/api/methods');
-                if (response.ok) {
-                    methodConfigs = await response.json();
-                    const select = document.getElementById('methodSelect');
-                    methodConfigs.forEach((method, idx) => {
-                        const option = document.createElement('option');
-                        option.value = idx;
-                        option.textContent = `${method.name || 'default'} (${method.url})`;
-                        select.appendChild(option);
-                    });
-                    // Restore last selected method
-                    const savedIdx = localStorage.getItem('ml_last_method');
-                    if (savedIdx !== null && methodConfigs[savedIdx]) {
-                        select.value = savedIdx;
-                        restoreSecretForMethod(savedIdx);
-                    }
-                }
+                const resp = await fetch('/api/methods');
+                if (!resp.ok) throw new Error('HTTP ' + resp.status);
+                state.methodConfigs = await resp.json();
             } catch (e) {
                 console.error('Failed to load method configs:', e);
+                toast('无法加载子配置列表: ' + e.message, 'error');
             }
         }
 
-        function onMethodChange() {
-            const select = document.getElementById('methodSelect');
-            const idx = select.value;
-            localStorage.setItem('ml_last_method', idx);
-            restoreSecretForMethod(idx);
+        /* ==================== API 与连接 ==================== */
+        async function manageFetch(path, body) {
+            const method = getSelectedMethod();
+            if (!method) throw new Error('未登录或会话已失效');
+            const secret = getSecretValue();
+            if (!secret) throw new Error('登录凭据缺失，请重新登录');
+            const resp = await fetch(method.url + path, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify(Object.assign({ secret }, body || {}))
+            });
+            let data = null;
+            try { data = await resp.json(); } catch (e) { /* 非 JSON 响应 */ }
+            if (resp.status === 429) throw new Error('请求过于频繁，请稍后再试');
+            if (!resp.ok) throw new Error((data && data.error) || ('请求失败 (' + resp.status + ')'));
+            return data;
         }
 
-        function onSecretChange() {
-            const select = document.getElementById('methodSelect');
-            const idx = select.value;
-            if (!idx && idx !== '0') return;
-            const method = methodConfigs[idx];
-            if (!method) return;
-            const secret = document.getElementById('secretKey').value;
-            const secrets = JSON.parse(localStorage.getItem('ml_secrets') || '{}');
-            secrets[method.url] = secret;
-            localStorage.setItem('ml_secrets', JSON.stringify(secrets));
+        function setConn(ok, msg) {
+            state.connected = ok;
+            const badge = $('connBadge');
+            badge.classList.remove('ok', 'err');
+            if (ok) {
+                badge.classList.add('ok');
+                $('connText').textContent = '已连接';
+            } else if (msg) {
+                badge.classList.add('err');
+                $('connText').textContent = '连接失败';
+            } else {
+                $('connText').textContent = '未连接';
+            }
+            if (msg) badge.title = msg;
         }
 
-        function restoreSecretForMethod(idx) {
-            const method = methodConfigs[idx];
-            if (!method) return;
-            const secrets = JSON.parse(localStorage.getItem('ml_secrets') || '{}');
-            const saved = secrets[method.url];
-            if (saved !== undefined) {
-                document.getElementById('secretKey').value = saved;
+        async function testConnection() {
+            try {
+                await manageFetch('/manage/list', { page: 1, pageSize: 1 });
+                setConn(true);
+                refreshCurrentTab();
+            } catch (e) {
+                setConn(false, e.message);
+                if (currentTab !== 'dashboard') toast(e.message, 'error');
             }
         }
 
-        function getSelectedMethod() {
-            const select = document.getElementById('methodSelect');
-            const idx = select.value;
-            if (!idx && idx !== '0') {
-                showResult('请先选择子配置', false, 'playerListResult');
-                return null;
-            }
-            return methodConfigs[idx];
-        }
-
-        function getSecret() {
-            const secret = document.getElementById('secretKey').value;
-            if (!secret) {
-                alert('请输入密钥');
-                return null;
-            }
-            return secret;
-        }
-
-        function showResult(message, success, elementId) {
-            const resultDiv = document.getElementById(elementId);
-            resultDiv.textContent = message;
-            resultDiv.className = 'result ' + (success ? 'success' : 'error');
-            resultDiv.style.display = 'block';
-            setTimeout(() => {
-                resultDiv.style.display = 'none';
-            }, 5000);
-        }
-
-        function switchTab(tabName) {
-            const tabs = document.querySelectorAll('.tab');
-            const contents = document.querySelectorAll('.tab-content');
-
-            tabs.forEach(tab => tab.classList.remove('active'));
-            contents.forEach(content => content.classList.remove('active'));
-
-            event.target.classList.add('active');
-            document.getElementById(tabName + 'Tab').classList.add('active');
-        }
-
-        // 自动分页状态
-        let allPlayers = [];
-        let currentPlayerPage = 1;
-        const PLAYER_PAGE_SIZE = 20;
-        let allBannedPlayers = [];
-        let banSearchKeyword = '';
-
-        // 本地搜索关键字
-        let playerSearchKeyword = '';
-        let playerSearchField = 'all'; // all | name | uuid
-
-        function normalizePlayer(player) {
-            if (typeof player === 'string') {
-                return { name: player, uuid: '', raw: player };
-            }
-            return {
-                name: player?.name || player?.playerName || '',
-                uuid: player?.uuid || player?.id || '',
-                from: player?.from || '',
-                raw: player
+        function refreshCurrentTab() {
+            if (!state.connected) return;
+            const loaders = {
+                dashboard: loadDashboard,
+                players: loadPlayers,
+                query: () => { },
+                ban: loadBans,
+                modify: () => { },
             };
+            (loaders[currentTab] || (() => { }))();
         }
 
-        function updatePlayerSearch() {
-            const input = document.getElementById('playerSearchInput');
-            const field = document.getElementById('playerSearchField');
-            playerSearchKeyword = (input?.value || '').trim().toLowerCase();
-            playerSearchField = field?.value || 'all';
-            renderPlayerPage(1);
-        }
-
-        function clearPlayerSearch() {
-            const input = document.getElementById('playerSearchInput');
-            const field = document.getElementById('playerSearchField');
-            if (input) input.value = '';
-            if (field) field.value = 'all';
-            playerSearchKeyword = '';
-            playerSearchField = 'all';
-            renderPlayerPage(1);
-        }
-
-        function getFilteredPlayers() {
-            if (!playerSearchKeyword) return allPlayers;
-
-            return allPlayers.filter(item => {
-                const p = normalizePlayer(item);
-                const name = String(p.name).toLowerCase();
-                const uuid = String(p.uuid).toLowerCase();
-                const from = String(p.from).toLowerCase();
-
-                if (playerSearchField === 'name') return name.includes(playerSearchKeyword);
-                if (playerSearchField === 'uuid') return uuid.includes(playerSearchKeyword);
-                if (playerSearchField === 'from') return from.includes(playerSearchKeyword);
-                return name.includes(playerSearchKeyword) || uuid.includes(playerSearchKeyword) || from.includes(playerSearchKeyword);
+        /* ==================== 标签页切换 ==================== */
+        $$('.tab').forEach(btn => {
+            btn.addEventListener('click', () => {
+                const name = btn.dataset.tab;
+                $$('.tab').forEach(b => b.classList.toggle('active', b === btn));
+                $$('.tab-content').forEach(s => s.classList.toggle('active', s.id === 'tab-' + name));
+                currentTab = name;
+                refreshCurrentTab();
             });
-        }
-
-        function outUuidToPlayerNameList() {
-
-            const filteredPlayers = allPlayers;
-
-            let result = {};
-            for (let item in filteredPlayers) {
-                const p = normalizePlayer(filteredPlayers[item]);
-                result[p.uuid] = p.name;
-            }
-            const blob = new Blob([JSON.stringify(result, null, 2)], {
-                type: "application/json",
+        });
+        $$('[data-goto]').forEach(btn => {
+            btn.addEventListener('click', () => {
+                const name = btn.dataset.goto;
+                const tab = $$('.tab').find(b => b.dataset.tab === name);
+                if (tab) tab.click();
             });
-            let url = URL.createObjectURL(blob);
-            window.open(url, 'UUID->玩家名数据');
-        }
-        async function loadPlayerList() {
-            const method = getSelectedMethod();
-            const secret = getSecret();
-            if (!method || !secret) return;
+        });
 
+        function setLoading(btn, on) {
+            if (on) { btn.dataset.old = btn.innerHTML; btn.classList.add('loading'); btn.disabled = true; }
+            else { btn.classList.remove('loading'); btn.disabled = false; if (btn.dataset.old) { btn.innerHTML = btn.dataset.old; delete btn.dataset.old; } }
+        }
+        function showBox(id, msg, ok) {
+            const box = $(id);
+            box.textContent = msg;
+            box.className = 'result-box show ' + (ok ? 'success' : 'error');
+        }
+        function hideBox(id) {
+            const box = $(id);
+            box.className = 'result-box';
+        }
+
+        /* ==================== 概览 ==================== */
+        async function loadDashboard() {
             try {
-                const response = await fetch(`${method.url}/manage/list`, {
-                    method: 'POST',
-                    headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify({ secret })
-                });
-
-                const result = await response.json();
-                if (result.success) {
-                    allPlayers = Array.isArray(result.players) ? result.players : [];
-                    renderPlayerPage(1);
-                    showResult(`成功加载 ${result.count} 个玩家`, true, 'playerListResult');
-                } else {
-                    allPlayers = [];
-                    renderPlayerPage(1);
-                    showResult(result.error || '加载失败', false, 'playerListResult');
-                }
+                const [sres, bres] = await Promise.all([manageFetch('/manage/stats'), manageFetch('/manage/bans')]);
+                state.bans = Array.isArray(bres.players) ? bres.players : [];
+                renderDashboardStats(sres);
+                renderBans();
             } catch (e) {
-                allPlayers = [];
-                renderPlayerPage(1);
-                showResult('请求失败: ' + e.message, false, 'playerListResult');
+                if (currentTab === 'dashboard') toast(e.message, 'error');
             }
         }
-        async function rebuildUuidTable() {
-            const method = getSelectedMethod();
-            const secret = getSecret();
-            if (!method || !secret) return;
+        function renderDashboardStats(s) {
+            const total = Number(s.total) || 0;
+            const banned = Number(s.banned) || 0;
+            const forever = Number(s.forever) || 0;
+            const temp = Number(s.temp) || 0;
+            $('statTotal').textContent = total;
+            $('statBanned').textContent = banned;
+            $('statForever').textContent = forever;
+            $('statTemp').textContent = temp;
+            $('statSources').textContent = Number(s.sourceCount) || 0;
 
-            if (!confirm('确定要重构 UUID->玩家名 索引表吗？这会按当前缓存文件重新生成。')) {
+            // 来源分布
+            const entries = Object.entries(s.sources || {}).sort((a, b) => b[1] - a[1]);
+            const wrap = $('sourceDist');
+            wrap.innerHTML = '';
+            wrap.classList.remove('empty');
+            if (!entries.length) {
+                wrap.classList.add('empty');
+                wrap.textContent = '暂无玩家数据';
                 return;
             }
-
-            try {
-                const response = await fetch(`${method.url}/manage/rebuild-uuid`, {
-                    method: 'POST',
-                    headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify({ secret })
-                });
-                const result = await response.json();
-                if (result.success) {
-                    showResult(`UUID表重构完成，当前索引项：${result.count}`, true, 'playerListResult');
-                    loadPlayerList();
-                } else {
-                    showResult(result.error || 'UUID表重构失败', false, 'playerListResult');
-                }
-            } catch (e) {
-                showResult('请求失败: ' + e.message, false, 'playerListResult');
-            }
-        }
-
-        function renderPlayerPage(page = 1) {
-            const listEl = document.getElementById('playerList');
-            const paginationEl = document.getElementById('playerPagination');
-            const prevBtn = document.getElementById('prevPageBtn');
-            const nextBtn = document.getElementById('nextPageBtn');
-            const pageInfo = document.getElementById('playerPageInfo');
-
-            const filteredPlayers = getFilteredPlayers();
-
-            if (!Array.isArray(filteredPlayers) || filteredPlayers.length === 0) {
-                listEl.innerHTML = '';
-                if (allPlayers.length > 0 && playerSearchKeyword) {
-                    const emptyLi = document.createElement('li');
-                    emptyLi.className = 'player-item';
-                    emptyLi.textContent = '未找到匹配玩家';
-                    listEl.appendChild(emptyLi);
-                }
-                paginationEl.style.display = 'none';
-                return;
-            }
-
-            const totalPages = Math.max(1, Math.ceil(filteredPlayers.length / PLAYER_PAGE_SIZE));
-            currentPlayerPage = Math.min(Math.max(page, 1), totalPages);
-
-            const start = (currentPlayerPage - 1) * PLAYER_PAGE_SIZE;
-            const end = start + PLAYER_PAGE_SIZE;
-            const pagePlayers = filteredPlayers.slice(start, end);
-
-            listEl.innerHTML = '';
-            pagePlayers.forEach(item => {
-                const p = normalizePlayer(item);
-
-                const li = document.createElement('li');
-                li.className = 'player-item';
-
-                const left = document.createElement('span');
-                left.textContent = p.uuid ? `${p.from ? `[${p.from}] ` : ""}${p.name} (${p.uuid})` : p.name;
-
-                const right = document.createElement('div');
-
-                const viewBtn = document.createElement('button');
-                viewBtn.className = 'secondary';
-                viewBtn.textContent = '查看';
-                viewBtn.onclick = () => viewPlayer(p.name);
-
-                const delBtn = document.createElement('button');
-                delBtn.className = 'danger';
-                delBtn.textContent = '删除';
-                delBtn.onclick = () => quickDelete(p.name);
-
-                right.appendChild(viewBtn);
-                right.appendChild(delBtn);
-
-                li.appendChild(left);
-                li.appendChild(right);
-                listEl.appendChild(li);
+            const max = entries[0][1];
+            entries.forEach(([from, count]) => {
+                const pct = Math.max(4, Math.round(count / max * 100));
+                wrap.appendChild(h('div', { class: 'dist-row' },
+                    h('span', { class: 'dist-label', text: from }),
+                    h('div', { class: 'dist-bar-wrap' }, h('div', { class: 'dist-bar', style: 'width:' + pct + '%' })),
+                    h('span', { class: 'dist-count', text: count })
+                ));
             });
 
-            paginationEl.style.display = totalPages > 1 ? 'flex' : 'none';
-            pageInfo.textContent = `第 ${currentPlayerPage} / ${totalPages} 页（匹配 ${filteredPlayers.length} / 总计 ${allPlayers.length}）`;
-            prevBtn.disabled = currentPlayerPage <= 1;
-            nextBtn.disabled = currentPlayerPage >= totalPages;
+            // 最近登录
+            const recent = s.recentLogins || [];
+            const rw = $('recentLogin');
+            rw.innerHTML = '';
+            if (!recent.length) {
+                rw.classList.add('empty');
+                rw.textContent = '暂无登录记录';
+            } else {
+                rw.classList.remove('empty');
+                const ul = h('ul', { class: 'plain-list' });
+                recent.forEach(p => {
+                    ul.appendChild(h('li', null,
+                        h('span', { text: p.name + (p.from ? ' [' + p.from + ']' : '') }),
+                        h('span', { class: 'hint', text: fmtTime(p.lastLogin) })
+                    ));
+                });
+                rw.appendChild(ul);
+            }
+
+            // 最近封禁
+            const recentBans = s.recentBans || [];
+            const bw = $('recentBan');
+            bw.innerHTML = '';
+            if (!recentBans.length) {
+                bw.classList.add('empty');
+                bw.textContent = '当前没有封禁中的玩家';
+            } else {
+                bw.classList.remove('empty');
+                const ul = h('ul', { class: 'plain-list' });
+                recentBans.forEach(b => {
+                    const isF = Number(b.banTime) === 0;
+                    ul.appendChild(h('li', null,
+                        h('span', null,
+                            b.name + ' ',
+                            h('span', { class: 'badge ' + (isF ? 'forever' : 'temp'), text: isF ? '永久' : '临时' })
+                        ),
+                        h('span', { class: 'hint', text: fmtIso(b.banStart) })
+                    ));
+                });
+                bw.appendChild(ul);
+            }
         }
 
-        function changePlayerPage(delta) {
-            renderPlayerPage(currentPlayerPage + delta);
+        /* ==================== 玩家列表 ==================== */
+        async function loadPlayers(quiet = false) {
+            try {
+                const res = await manageFetch('/manage/list', {
+                    page: state.pPage,
+                    pageSize: state.pPageSize,
+                    search: state.pSearch,
+                    field: state.pField,
+                    sort: state.pSort,
+                    dir: state.pSortDir
+                });
+                state.players = Array.isArray(res.players) ? res.players : [];
+                state.pTotal = Number(res.total) || 0;
+                // 当前页可能因删除/筛选越界，回退到最后一页
+                const totalPages = Math.max(1, Math.ceil(state.pTotal / state.pPageSize));
+                if (state.players.length === 0 && state.pPage > totalPages) {
+                    state.pPage = totalPages;
+                    return loadPlayers(quiet);
+                }
+                renderPlayers();
+                if (!quiet) toast(`已加载 ${state.players.length} 名玩家`, 'success');
+            } catch (e) {
+                if (!quiet) toast(e.message, 'error');
+            }
         }
+
+        function renderPlayers() {
+            const tbody = $('playerTableBody');
+            const list = state.players;
+            const totalPages = Math.max(1, Math.ceil(state.pTotal / state.pPageSize));
+            state.pPage = Math.min(Math.max(state.pPage, 1), totalPages);
+
+            // 排序箭头
+            $$('#playerTable th.sortable').forEach(th => {
+                const arrow = th.querySelector('.sort-arrow');
+                arrow.textContent = th.dataset.sort === state.pSort ? (state.pSortDir === 1 ? ' ▲' : ' ▼') : '';
+            });
+
+            tbody.innerHTML = '';
+            if (!state.pTotal) {
+                tbody.appendChild(h('tr', null, h('td', { colspan: '7', class: 'empty' }, state.pSearch ? '没有匹配的玩家' : '暂无玩家数据')));
+            } else if (!list.length) {
+                tbody.appendChild(h('tr', null, h('td', { colspan: '7', class: 'empty' }, '没有匹配的玩家')));
+            } else {
+                list.forEach(p => {
+                    const checked = state.pSelection.has(p.name);
+                    const tr = h('tr', null,
+                        h('td', { class: 'col-check' },
+                            h('input', { type: 'checkbox', checked: checked, onchange: (e) => {
+                                if (e.target.checked) state.pSelection.add(p.name); else state.pSelection.delete(p.name);
+                                updateBatchBtn();
+                            } })
+                        ),
+                        h('td', { class: 'mono', text: p.name }),
+                        h('td', { class: 'uuid-cell', text: p.uuid || '-' }),
+                        h('td', null, p.from ? h('span', { class: 'badge from', text: p.from }) : '-'),
+                        h('td', { class: 'hint', text: fmtTime(p.lastLogin) }),
+                        h('td', null, banBadge(p)),
+                        h('td', null,
+                            h('div', { class: 'actions-cell' },
+                                h('button', { class: 'btn secondary sm', onclick: () => viewPlayer(p.name) }, '查看'),
+                                h('button', { class: 'btn danger sm', onclick: () => quickDelete(p.name) }, '删除')
+                            )
+                        )
+                    );
+                    tbody.appendChild(tr);
+                });
+            }
+
+            $('playerCount').textContent = `共 ${state.pTotal} 名`;
+            $('playerPageInfo').textContent = `第 ${state.pPage} / ${totalPages} 页`;
+            $('playerPrev').disabled = state.pPage <= 1;
+            $('playerNext').disabled = state.pPage >= totalPages;
+            $('playerPageJump').max = totalPages;
+            $('playerPageJump').value = state.pPage;
+            // 全选状态（仅当前页）
+            const all = list.length > 0 && list.every(p => state.pSelection.has(p.name));
+            $('playerCheckAll').checked = all;
+            updateBatchBtn();
+        }
+
+        function banBadge(p) {
+            if (p.ban === true) {
+                const isF = Number(p.banTime) === 0;
+                return h('span', { class: 'badge ' + (isF ? 'forever' : 'temp'), text: isF ? '永久封禁' : '临时封禁' });
+            }
+            return h('span', { class: 'badge none', text: '正常' });
+        }
+
+        function updateBatchBtn() {
+            $('playerBatchDelete').disabled = state.pSelection.size === 0;
+            $('playerBatchDelete').textContent = `🗑 批量删除${state.pSelection.size ? '(' + state.pSelection.size + ')' : ''}`;
+        }
+
+        $('playerRefresh').addEventListener('click', () => loadPlayers(false));
+        $('playerSearch').addEventListener('input', debounce(e => {
+            state.pSearch = e.target.value.trim();
+            state.pPage = 1;
+            loadPlayers(true);
+        }, 300));
+        $('playerSearchField').addEventListener('change', e => { state.pField = e.target.value; state.pPage = 1; loadPlayers(true); });
+        $$('#playerTable th.sortable').forEach(th => {
+            th.addEventListener('click', () => {
+                const f = th.dataset.sort;
+                if (state.pSort === f) state.pSortDir *= -1;
+                else { state.pSort = f; state.pSortDir = 1; }
+                loadPlayers(true);
+            });
+        });
+        $('playerPageSize').addEventListener('change', e => { state.pPageSize = parseInt(e.target.value, 10) || 20; state.pPage = 1; loadPlayers(true); });
+        $('playerPrev').addEventListener('click', () => { state.pPage--; loadPlayers(true); });
+        $('playerNext').addEventListener('click', () => { state.pPage++; loadPlayers(true); });
+        $('playerPageJump').addEventListener('change', e => {
+            const n = parseInt(e.target.value, 10);
+            if (n > 0) { state.pPage = n; loadPlayers(true); }
+        });
+        $('playerCheckAll').addEventListener('change', e => {
+            state.players.forEach(p => {
+                if (e.target.checked) state.pSelection.add(p.name); else state.pSelection.delete(p.name);
+            });
+            renderPlayers();
+        });
+
+        async function fetchAllPlayers() {
+            const res = await manageFetch('/manage/export');
+            return Array.isArray(res.players) ? res.players : [];
+        }
+
+        $('playerExportUuid').addEventListener('click', async () => {
+            try {
+                const list = await fetchAllPlayers();
+                const map = {};
+                list.forEach(p => { if (p.uuid) map[p.uuid] = p.name; });
+                downloadFile('uuid-map.json', JSON.stringify(map, null, 2), 'application/json');
+                toast(`已导出 ${Object.keys(map).length} 条 UUID 映射`, 'success');
+            } catch (e) {
+                toast(e.message, 'error');
+            }
+        });
+        $('playerExportCsv').addEventListener('click', async () => {
+            try {
+                const rows = await fetchAllPlayers();
+                const escCsv = v => {
+                    v = String(v == null ? '' : v);
+                    return /[",\n]/.test(v) ? '"' + v.replace(/"/g, '""') + '"' : v;
+                };
+                const csv = ['name,uuid,from,lastLogin']
+                    .concat(rows.map(p => [p.name, p.uuid, p.from, p.lastLogin].map(escCsv).join(',')))
+                    .join('\n');
+                downloadFile('players.csv', '\ufeff' + csv, 'text/csv;charset=utf-8');
+                toast(`已导出 ${rows.length} 条记录`, 'success');
+            } catch (e) {
+                toast(e.message, 'error');
+            }
+        });
+        $('playerBatchDelete').addEventListener('click', batchDeletePlayers);
+        $('dashExport').addEventListener('click', () => $('playerExportUuid').click());
+
+        async function batchDeletePlayers() {
+            const names = Array.from(state.pSelection);
+            if (!names.length) { toast('请先勾选要删除的玩家', 'warning'); return; }
+            const ok = await confirmDialog({
+                title: '批量删除',
+                message: `确定要删除 ${names.length} 名玩家的缓存吗？此操作不可恢复！\n${names.slice(0, 8).join('、')}${names.length > 8 ? ' 等' : ''}`,
+                confirmText: `删除 ${names.length} 名`
+            });
+            if (!ok) return;
+            try {
+                const res = await manageFetch('/manage/batch-delete', { players: names });
+                if (res.failed && res.failed.length) {
+                    toast(`已删除 ${res.deleted.length} 名，${res.failed.length} 名失败`, 'warning');
+                } else {
+                    toast(`已删除 ${res.deleted.length} 名玩家`, 'success');
+                }
+                state.pSelection.clear();
+                await loadPlayers(true);
+                if (currentTab === 'dashboard') await loadDashboard();
+            } catch (e) {
+                toast(e.message, 'error');
+            }
+        }
+
+        async function quickDelete(name) {
+            const ok = await confirmDialog({ title: '删除玩家', message: `确定要删除玩家 ${name} 的缓存吗？此操作不可恢复！`, confirmText: '删除' });
+            if (!ok) return;
+            try {
+                await manageFetch(`/manage/delete/${encodeURIComponent(name)}`);
+                toast(`已删除玩家 ${name}`, 'success');
+                await loadPlayers(true);
+                if (currentTab === 'dashboard') await loadDashboard();
+            } catch (e) {
+                toast(e.message, 'error');
+            }
+        }
+
+        function rebuildUuid() {
+            confirmDialog({
+                title: '重构 UUID 表',
+                message: '确定要重构 UUID->玩家名 索引表吗？这会按当前缓存文件重新生成。',
+                confirmText: '重构',
+                danger: false
+            }).then(async ok => {
+                if (!ok) return;
+                try {
+                    const res = await manageFetch('/manage/rebuild-uuid');
+                    toast(`UUID 表重构完成，当前索引项：${res.count}`, 'success');
+                    if (currentTab === 'players') await loadPlayers(true);
+                } catch (e) {
+                    toast(e.message, 'error');
+                }
+            });
+        }
+        $('playerRebuildUuid').addEventListener('click', rebuildUuid);
+        $('dashRebuildUuid').addEventListener('click', rebuildUuid);
+
+        /* ==================== 查询玩家 ==================== */
+        $('queryForm').addEventListener('submit', e => { e.preventDefault(); queryPlayer(); });
 
         async function queryPlayer() {
-            const method = getSelectedMethod();
-            const secret = getSecret();
-            const playerName = document.getElementById('queryPlayerName').value;
-            if (!method || !secret || !playerName) {
-                showResult('请填写完整信息', false, 'queryResult');
-                return;
-            }
-
+            const name = $('queryPlayerName').value.trim();
+            if (!name) { showBox('queryResult', '请输入玩家名称', false); return; }
+            hideBox('queryResult');
             try {
-                const response = await fetch(`${method.url}/manage/query/${playerName}`, {
-                    method: 'POST',
-                    headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify({ secret })
-                });
-
-                const result = await response.json();
-                if (result.success) {
-                    document.getElementById('queryData').textContent = JSON.stringify(result.data, null, 2);
-                    renderParsedPlayerData(result.data);
-
-                    lastQueriedPlayerData = result.data;
-                    lastQueriedPlayerName = playerName;
-                    document.getElementById('jumpToModifyBtn').disabled = false;
-
-                    showResult('查询成功', true, 'queryResult');
-                } else {
-                    document.getElementById('queryData').textContent = '';
-                    renderParsedPlayerData(null);
-                    lastQueriedPlayerData = null;
-                    lastQueriedPlayerName = '';
-                    document.getElementById('jumpToModifyBtn').disabled = true;
-
-                    showResult(result.error || '查询失败', false, 'queryResult');
-                }
+                const res = await manageFetch(`/manage/query/${encodeURIComponent(name)}`);
+                state.queryData = res.data;
+                state.queryName = name;
+                $('queryData').textContent = JSON.stringify(res.data, null, 2);
+                renderParsed(res.data);
+                $('queryToModify').disabled = false;
             } catch (e) {
-                showResult('请求失败: ' + e.message, false, 'queryResult');
+                state.queryData = null;
+                state.queryName = '';
+                $('queryData').textContent = '';
+                $('queryParsedWrap').innerHTML = '';
+                $('queryToModify').disabled = true;
+                showBox('queryResult', e.message, false);
             }
         }
 
-        function jumpToModifyFromQuery() {
-            if (!lastQueriedPlayerData || !lastQueriedPlayerName) {
-                showResult('请先查询玩家', false, 'queryResult');
-                return;
-            }
+        function renderParsed(data) {
+            const wrap = $('queryParsedWrap');
+            wrap.innerHTML = '';
+            wrap.classList.remove('empty');
+            if (!data || typeof data !== 'object') { wrap.classList.add('empty'); wrap.textContent = '无数据'; return; }
 
-            document.getElementById('modifyPlayerName').value = lastQueriedPlayerName;
-            document.getElementById('modifyPlayerData').value = JSON.stringify(lastQueriedPlayerData, null, 2);
-            switchTabByName('modify');
-        }
-
-        function formatTimestamp(ms) {
-            const n = Number(ms);
-            if (!Number.isFinite(n) || n <= 0) return '无';
-            const d = new Date(n);
-            if (Number.isNaN(d.getTime())) return String(ms);
-            return d.toLocaleString('zh-CN', { hour12: false });
-        }
-
-        function formatIsoTime(value) {
-            if (!value) return '无';
-            const d = new Date(value);
-            if (Number.isNaN(d.getTime())) return String(value);
-            return d.toLocaleString('zh-CN', { hour12: false });
-        }
-
-        function renderParsedPlayerData(data) {
-            const wrap = document.getElementById('queryParsedWrap');
-            if (!data || typeof data !== 'object') {
-                wrap.innerHTML = '<p>无数据</p>';
-                return;
-            }
-
-            let banStatusText = '否';
-            let banUnbanTimeText = '无';
+            let status = '否';
+            let unbanText = '无';
+            let remaining = '';
             if (data.ban === true) {
-                const banTimeNum = Number(data.banTime);
-                if (Number.isFinite(banTimeNum) && banTimeNum === 0) {
-                    banStatusText = '是（永久封禁）';
+                const bt = Number(data.banTime);
+                if (Number.isFinite(bt) && bt === 0) {
+                    status = '是（永久封禁）';
+                } else if (Number.isFinite(bt) && bt > Date.now()) {
+                    status = '是（临时封禁）';
+                    unbanText = fmtTime(bt);
+                    remaining = fmtDuration(bt - Date.now());
                 } else {
-                    const now = Date.now();
-                    if (Number.isFinite(banTimeNum) && banTimeNum > now) {
-                        banStatusText = '是（临时封禁）';
-                        banUnbanTimeText = formatTimestamp(banTimeNum);
-                    } else {
-                        banStatusText = '否（封禁已过期）';
-                    }
+                    status = '否（封禁已过期）';
                 }
             }
 
             const rows = [
-                ['name', data.name ?? ''],
-                ['uuid', data.uuid ?? ''],
-                ['from', data.from ?? ''],
-                ['封禁状态', banStatusText],
+                ['玩家名称', data.name ?? ''],
+                ['UUID', data.uuid ?? ''],
+                ['来源', data.from ?? ''],
+                ['曾用名', Array.isArray(data.old_names) ? data.old_names.join('、') : '无'],
+                ['封禁状态', status],
                 ['封禁原因', data.banReason ?? '无'],
-                ['封禁开始时间', formatIsoTime(data.banStart)],
-                ['解封时间', banUnbanTimeText],
-                ['lastLogin', formatTimestamp(data.lastLogin)],
-                ['ip', data.ip ?? '']
+                ['封禁开始', fmtIso(data.banStart)],
+                ['解封时间', unbanText],
+                ['剩余时间', remaining],
+                ['最后登录', fmtTime(data.lastLogin)],
+                ['IP', data.ip ?? ''],
             ];
-
-            const html = rows.map(([k, v]) => `<tr><th>${k}</th><td>${v}</td></tr>`).join('');
-            wrap.innerHTML = `<table class="parsed-table"><tbody>${html}</tbody></table>`;
+            const table = h('table', { class: 'parsed-table' });
+            const tbody = h('tbody');
+            rows.forEach(([k, v]) => {
+                tbody.appendChild(h('tr', null,
+                    h('th', { text: k }),
+                    h('td', null,
+                        h('span', { text: String(v) }),
+                        h('button', { class: 'btn secondary sm copy-btn', onclick: () => copyText(String(v)) }, '复制')
+                    )
+                ));
+            });
+            table.appendChild(tbody);
+            wrap.appendChild(table);
         }
 
+        $('queryToModify').addEventListener('click', () => {
+            if (!state.queryData) return;
+            $('modifyPlayerName').value = state.queryName;
+            setModifyData(state.queryData);
+            const tab = $$('.tab').find(b => b.dataset.tab === 'modify');
+            if (tab) tab.click();
+        });
+
+        function viewPlayer(name) {
+            $('queryPlayerName').value = name;
+            const tab = $$('.tab').find(b => b.dataset.tab === 'query');
+            if (tab) tab.click();
+            queryPlayer();
+        }
+
+        /* ==================== 封禁管理 ==================== */
         function updateBanUI() {
-            const mode = document.getElementById('banMode').value;
-            document.getElementById('banDurationGroup').style.display = mode === 'temp' ? '' : 'none';
-            document.getElementById('banReasonGroup').style.display = mode === 'unban' ? 'none' : '';
+            const mode = $('banMode').value;
+            $('banTimeGroup').style.display = mode === 'temp' ? '' : 'none';
+            $('banReasonRow').style.display = mode === 'unban' ? 'none' : '';
         }
-
         function updateBanTimeMode() {
-            const mode = document.querySelector('input[name="banTimeMode"]:checked').value;
-            document.getElementById('banDurationInputs').style.display = mode === 'duration' ? '' : 'none';
-            document.getElementById('banDatetimeInputs').style.display = mode === 'datetime' ? '' : 'none';
+            const m = document.querySelector('input[name="banTimeMode"]:checked').value;
+            $('banDurationInputs').style.display = m === 'duration' ? '' : 'none';
+            $('banDatetimeInputs').style.display = m === 'datetime' ? '' : 'none';
         }
+        $('banMode').addEventListener('change', updateBanUI);
+        $$('input[name="banTimeMode"]').forEach(r => r.addEventListener('change', updateBanTimeMode));
+        $$('.quick-durs .btn').forEach(btn => {
+            btn.addEventListener('click', () => {
+                if (btn.dataset.forever) {
+                    $('banMode').value = 'forever';
+                    updateBanUI();
+                    return;
+                }
+                const ms = parseInt(btn.dataset.ms, 10);
+                $('banMode').value = 'temp';
+                updateBanUI();
+                document.querySelector('input[name="banTimeMode"][value="duration"]').checked = true;
+                updateBanTimeMode();
+                const s = Math.floor(ms / 1000);
+                $('banDays').value = Math.floor(s / 86400);
+                $('banHours').value = Math.floor((s % 86400) / 3600);
+                $('banMinutes').value = Math.floor((s % 3600) / 60);
+                $('banSeconds').value = s % 60;
+            });
+        });
+
+        $('banForm').addEventListener('submit', e => { e.preventDefault(); banPlayer(); });
 
         async function banPlayer() {
-            const method = getSelectedMethod();
-            const secret = getSecret();
-            const banType = document.getElementById('banType').value;
-            const banTarget = document.getElementById('banTarget').value;
-            const banMode = document.getElementById('banMode').value;
-            const banReason = document.getElementById('banReason').value.trim();
+            const type = $('banType').value;
+            const target = $('banTarget').value.trim();
+            const mode = $('banMode').value;
+            const reason = $('banReason').value.trim();
+            if (!target) { toast('请输入玩家名称或 UUID', 'warning'); return; }
 
-            if (!method || !secret || !banTarget) {
-                showResult('请填写完整信息', false, 'banResult');
-                return;
-            }
-
-            let banTimeMs;
-            let timeDesc;
-            if (banMode === 'forever') {
-                banTimeMs = 0;
-                timeDesc = '永久封禁';
-            } else if (banMode === 'unban') {
-                banTimeMs = -1;
-                timeDesc = '解除封禁';
+            let timeMs, desc;
+            if (mode === 'forever') {
+                timeMs = 0; desc = '永久封禁';
+            } else if (mode === 'unban') {
+                timeMs = -1; desc = '解除封禁';
             } else {
                 const timeMode = document.querySelector('input[name="banTimeMode"]:checked').value;
                 if (timeMode === 'datetime') {
-                    const dt = document.getElementById('banDatetime').value;
-                    if (!dt) {
-                        showResult('请选择封禁结束时间', false, 'banResult');
-                        return;
-                    }
-                    const endTs = new Date(dt).getTime();
-                    banTimeMs = endTs - Date.now();
-                    if (banTimeMs <= 0) {
-                        showResult('封禁结束时间必须晚于当前时间', false, 'banResult');
-                        return;
-                    }
-                    timeDesc = '临时封禁至 ' + new Date(dt).toLocaleString('zh-CN', { hour12: false });
+                    const v = $('banDatetime').value;
+                    if (!v) { toast('请选择封禁结束时间', 'warning'); return; }
+                    timeMs = new Date(v).getTime() - Date.now();
+                    if (timeMs <= 0) { toast('封禁结束时间必须晚于当前时间', 'warning'); return; }
+                    desc = '临时封禁至 ' + fmtTime(new Date(v).getTime());
                 } else {
-                    const days = Math.max(0, parseInt(document.getElementById('banDays').value) || 0);
-                    const hours = Math.max(0, parseInt(document.getElementById('banHours').value) || 0);
-                    const minutes = Math.max(0, parseInt(document.getElementById('banMinutes').value) || 0);
-                    const seconds = Math.max(0, parseInt(document.getElementById('banSeconds').value) || 0);
-                    banTimeMs = (days * 86400 + hours * 3600 + minutes * 60 + seconds) * 1000;
-                    if (banTimeMs <= 0) {
-                        showResult('请输入有效的封禁时长', false, 'banResult');
-                        return;
-                    }
-                    const parts = [];
-                    if (days) parts.push(`${days}天`);
-                    if (hours) parts.push(`${hours}时`);
-                    if (minutes) parts.push(`${minutes}分`);
-                    if (seconds) parts.push(`${seconds}秒`);
-                    timeDesc = '临时封禁 ' + parts.join('');
+                    const d = Math.max(0, parseInt($('banDays').value, 10) || 0);
+                    const hh = Math.max(0, parseInt($('banHours').value, 10) || 0);
+                    const m = Math.max(0, parseInt($('banMinutes').value, 10) || 0);
+                    const s = Math.max(0, parseInt($('banSeconds').value, 10) || 0);
+                    timeMs = (d * 86400 + hh * 3600 + m * 60 + s) * 1000;
+                    if (timeMs <= 0) { toast('请输入有效的封禁时长', 'warning'); return; }
+                    desc = '临时封禁 ' + fmtDuration(timeMs);
                 }
             }
 
+            const btn = $('banExecute');
+            setLoading(btn, true);
             try {
-                const body = { secret };
-                if (banReason && banMode !== 'unban') body.reason = banReason;
-
-                const response = await fetch(`${method.url}/ban/${banType}/${banTarget}/${banTimeMs}`, {
-                    method: 'POST',
-                    headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify(body)
-                });
-
-                const result = await response.json();
-                if (result.success) {
-                    showResult(`成功 ${timeDesc} ${result.player || banTarget}`, true, 'banResult');
-                    loadBannedPlayerList();
-                } else {
-                    showResult(result.error || '操作失败', false, 'banResult');
-                }
+                const res = await manageFetch(`/ban/${type}/${encodeURIComponent(target)}/${timeMs}`, (mode !== 'unban' && reason) ? { reason } : {});
+                toast(`已${desc} ${res.player || target}`, 'success');
+                $('banTarget').value = '';
+                await loadBans(true);
+                if (currentTab === 'dashboard') await loadDashboard();
             } catch (e) {
-                showResult('请求失败: ' + e.message, false, 'banResult');
+                toast(e.message, 'error');
+            } finally {
+                setLoading(btn, false);
             }
         }
 
-        function updateBanSearch() {
-            const input = document.getElementById('banSearchInput');
-            banSearchKeyword = (input?.value || '').trim().toLowerCase();
-            renderBannedPlayerList();
-        }
-
-        function clearBanSearch() {
-            const input = document.getElementById('banSearchInput');
-            if (input) input.value = '';
-            banSearchKeyword = '';
-            renderBannedPlayerList();
-        }
-
-        function getFilteredBannedPlayers() {
-            if (!banSearchKeyword) return allBannedPlayers;
-            return allBannedPlayers.filter(p => String(p.name || '').toLowerCase().includes(banSearchKeyword));
-        }
-
-        function renderBannedPlayerList() {
-            const listEl = document.getElementById('bannedPlayerList');
-            listEl.innerHTML = '';
-
-            const filteredBannedPlayers = getFilteredBannedPlayers();
-
-            if (!Array.isArray(filteredBannedPlayers) || filteredBannedPlayers.length === 0) {
-                const emptyLi = document.createElement('li');
-                emptyLi.className = 'player-item';
-                emptyLi.textContent = allBannedPlayers.length > 0 && banSearchKeyword
-                    ? '没有匹配的封禁玩家'
-                    : '当前没有处于封禁中的玩家';
-                listEl.appendChild(emptyLi);
-                return;
+        async function loadBans(quiet = false) {
+            try {
+                const res = await manageFetch('/manage/bans');
+                state.bans = Array.isArray(res.players) ? res.players : [];
+                state.bSelection.clear();
+                renderBans();
+                if (!quiet) toast(`当前封禁玩家 ${state.bans.length} 人`, 'success');
+            } catch (e) {
+                if (!quiet) toast(e.message, 'error');
             }
+        }
 
-            filteredBannedPlayers.forEach(p => {
-                const li = document.createElement('li');
-                li.className = 'player-item';
+        function getFilteredBans() {
+            const kw = state.bSearch.toLowerCase();
+            if (!kw) return state.bans;
+            return state.bans.filter(b => String(b.name || '').toLowerCase().includes(kw));
+        }
 
-                const left = document.createElement('div');
-                const name = p.name || '(unknown)';
-                const banTimeNum = Number(p.banTime);
-                const isForeverBan = Number.isFinite(banTimeNum) && banTimeNum === 0;
-                const banTypeText = isForeverBan ? '永久封禁' : '临时封禁';
-                const untilText = isForeverBan ? '永久' : formatTimestamp(p.banTime);
-                const badgeClass = isForeverBan ? 'ban-badge forever' : 'ban-badge';
-                const titleNode = document.createElement('div');
-                titleNode.textContent = name;
-                const badge = document.createElement('span');
-                badge.className = badgeClass;
-                badge.textContent = banTypeText;
-                titleNode.appendChild(badge);
+        function renderBans() {
+            const tbody = $('banTableBody');
+            const list = getFilteredBans();
+            tbody.innerHTML = '';
+            if (!state.bans.length) {
+                tbody.appendChild(h('tr', null, h('td', { colspan: '6', class: 'empty' }, '当前没有处于封禁中的玩家')));
+            } else if (!list.length) {
+                tbody.appendChild(h('tr', null, h('td', { colspan: '6', class: 'empty' }, '没有匹配的封禁玩家')));
+            } else {
+                const now = Date.now();
+                list.forEach(b => {
+                    const isF = Number(b.banTime) === 0;
+                    const remain = isF ? '永久' : fmtDuration(Number(b.banTime) - now);
+                    const checked = state.bSelection.has(b.name);
+                    tbody.appendChild(h('tr', null,
+                        h('td', { class: 'col-check' },
+                            h('input', { type: 'checkbox', checked: checked, onchange: (e) => {
+                                if (e.target.checked) state.bSelection.add(b.name); else state.bSelection.delete(b.name);
+                                $('banBatchUnban').disabled = state.bSelection.size === 0;
+                                $('banBatchUnban').textContent = '批量解封' + (state.bSelection.size ? '(' + state.bSelection.size + ')' : '');
+                            } })
+                        ),
+                        h('td', null,
+                            h('span', { text: b.name }),
+                            h('span', { class: 'badge ' + (isF ? 'forever' : 'temp'), text: isF ? '永久' : '临时' })
+                        ),
+                        h('td', { class: 'hint', text: b.banReason || '无' }),
+                        h('td', { class: 'hint', text: fmtIso(b.banStart) }),
+                        h('td', { text: remain }),
+                        h('td', null,
+                            h('div', { class: 'actions-cell' },
+                                h('button', { class: 'btn secondary sm', onclick: () => viewPlayer(b.name) }, '查看'),
+                                h('button', { class: 'btn danger sm', onclick: () => quickUnban(b.name) }, '解封')
+                            )
+                        )
+                    ));
+                });
+            }
+            $('banCount').textContent = `共 ${state.bans.length} 人封禁中` + (state.bSearch ? `，匹配 ${list.length} 人` : '');
+            $('banCheckAll').checked = list.length > 0 && list.every(b => state.bSelection.has(b.name));
+            $('banBatchUnban').disabled = state.bSelection.size === 0;
+            $('banBatchUnban').textContent = '批量解封' + (state.bSelection.size ? '(' + state.bSelection.size + ')' : '');
+        }
 
-                const detailNode = document.createElement('small');
-                const reasonText = p.banReason ? p.banReason : '无';
-                detailNode.textContent = `封禁原因：${reasonText}，封禁时间：${untilText}`;
-
-                left.appendChild(titleNode);
-                left.appendChild(detailNode);
-
-                const right = document.createElement('div');
-
-                const viewBtn = document.createElement('button');
-                viewBtn.className = 'secondary';
-                viewBtn.textContent = '查看';
-                viewBtn.onclick = () => viewPlayer(name);
-
-                const unbanBtn = document.createElement('button');
-                unbanBtn.className = 'danger';
-                unbanBtn.textContent = '解封';
-                unbanBtn.onclick = () => quickUnbanPlayer(name);
-
-                right.appendChild(viewBtn);
-                right.appendChild(unbanBtn);
-                li.appendChild(left);
-                li.appendChild(right);
-                listEl.appendChild(li);
+        $('banRefresh').addEventListener('click', () => loadBans(false));
+        $('banSearch').addEventListener('input', debounce(e => { state.bSearch = e.target.value.trim(); renderBans(); }, 250));
+        $('banCheckAll').addEventListener('change', e => {
+            getFilteredBans().forEach(b => {
+                if (e.target.checked) state.bSelection.add(b.name); else state.bSelection.delete(b.name);
             });
-        }
+            renderBans();
+        });
 
-        async function loadBannedPlayerList() {
-            const method = getSelectedMethod();
-            const secret = getSecret();
-            if (!method || !secret) return;
-
+        async function quickUnban(name) {
+            const ok = await confirmDialog({ title: '解除封禁', message: `确定要解除玩家 ${name} 的封禁吗？`, confirmText: '解封', danger: false });
+            if (!ok) return;
             try {
-                const response = await fetch(`${method.url}/manage/bans`, {
-                    method: 'POST',
-                    headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify({ secret })
-                });
-
-                const result = await response.json();
-                if (result.success) {
-                    allBannedPlayers = Array.isArray(result.players) ? result.players : [];
-                    renderBannedPlayerList();
-                    showResult(`当前封禁玩家 ${allBannedPlayers.length} 人`, true, 'banListResult');
-                } else {
-                    allBannedPlayers = [];
-                    renderBannedPlayerList();
-                    showResult(result.error || '加载封禁列表失败', false, 'banListResult');
-                }
+                await manageFetch(`/ban/name/${encodeURIComponent(name)}/-1`);
+                toast(`已解除玩家 ${name} 的封禁`, 'success');
+                await loadBans(true);
+                if (currentTab === 'dashboard') await loadDashboard();
             } catch (e) {
-                allBannedPlayers = [];
-                renderBannedPlayerList();
-                showResult('请求失败: ' + e.message, false, 'banListResult');
+                toast(e.message, 'error');
             }
         }
 
-        async function quickUnbanPlayer(playerName) {
-            const method = getSelectedMethod();
-            const secret = getSecret();
-            if (!method || !secret || !playerName) return;
+        $('banBatchUnban').addEventListener('click', async () => {
+            const names = Array.from(state.bSelection);
+            if (!names.length) { toast('请先勾选要解封的玩家', 'warning'); return; }
+            const ok = await confirmDialog({ title: '批量解封', message: `确定要解除 ${names.length} 名玩家的封禁吗？`, confirmText: `解封 ${names.length} 名`, danger: false });
+            if (!ok) return;
+            try {
+                const res = await manageFetch('/manage/batch-unban', { players: names });
+                toast(res.failed && res.failed.length ? `已解封 ${res.unbanned.length} 名，${res.failed.length} 名失败` : `已解封 ${res.unbanned.length} 名玩家`, res.failed && res.failed.length ? 'warning' : 'success');
+                state.bSelection.clear();
+                await loadBans(true);
+                if (currentTab === 'dashboard') await loadDashboard();
+            } catch (e) {
+                toast(e.message, 'error');
+            }
+        });
 
-            if (!confirm(`确定要解除玩家 ${playerName} 的封禁吗？`)) {
+        /* ==================== 缓存修改 ==================== */
+        $('modifyLoad').addEventListener('click', async () => {
+            const name = $('modifyPlayerName').value.trim();
+            if (!name) { showBox('modifyResult', '请输入玩家名称', false); return; }
+            hideBox('modifyResult');
+            try {
+                const res = await manageFetch(`/manage/query/${encodeURIComponent(name)}`);
+                setModifyData(res.data);
+                showBox('modifyResult', '数据加载成功', true);
+            } catch (e) {
+                showBox('modifyResult', e.message, false);
+            }
+        });
+
+        function setModifyData(data) {
+            $('modifyPlayerData').value = JSON.stringify(data, null, $('modifyPretty').checked ? 2 : 0);
+            renderModifySummary(data);
+            validateJson();
+        }
+
+        function renderModifySummary(data) {
+            const wrap = $('modifySummary');
+            wrap.innerHTML = '';
+            if (!data || typeof data !== 'object') { wrap.classList.add('empty'); wrap.textContent = '加载后显示玩家摘要'; return; }
+            wrap.classList.remove('empty');
+            let status = '正常';
+            if (data.ban === true) {
+                const bt = Number(data.banTime);
+                status = bt === 0 ? '永久封禁' : (bt > Date.now() ? '临时封禁（' + fmtTime(bt) + '解封）' : '封禁已过期');
+            }
+            wrap.appendChild(h('div', { class: 'hint', style: 'margin:0 0 10px;' },
+                '名称: ' + (data.name || '-') + ' ｜ UUID: ' + (data.uuid || '-') + ' ｜ 来源: ' + (data.from || '-') + ' ｜ 状态: ' + status
+            ));
+        }
+
+        function validateJson() {
+            const raw = $('modifyPlayerData').value;
+            const hint = $('jsonHint');
+            if (!raw.trim()) { hint.textContent = ''; hint.className = 'hint'; return; }
+            try {
+                JSON.parse(raw);
+                hint.textContent = '✓ JSON 格式正确';
+                hint.className = 'hint json-ok';
+            } catch (e) {
+                hint.textContent = '✗ JSON 格式错误: ' + e.message;
+                hint.className = 'hint json-bad';
+            }
+        }
+        $('modifyPlayerData').addEventListener('input', validateJson);
+        $('modifyPretty').addEventListener('change', () => {
+            try { setModifyData(JSON.parse($('modifyPlayerData').value)); } catch (e) { /* 未格式化时不做 */ }
+        });
+        $('modifyFormat').addEventListener('click', () => {
+            try { $('modifyPlayerData').value = JSON.stringify(JSON.parse($('modifyPlayerData').value), null, 2); validateJson(); }
+            catch (e) { toast('无法格式化：JSON 格式错误', 'warning'); }
+        });
+        $('modifyCompact').addEventListener('click', () => {
+            try { $('modifyPlayerData').value = JSON.stringify(JSON.parse($('modifyPlayerData').value)); validateJson(); }
+            catch (e) { toast('无法压缩：JSON 格式错误', 'warning'); }
+        });
+
+        $('modifyForm').addEventListener('submit', e => {
+            e.preventDefault();
+            const name = $('modifyPlayerName').value.trim();
+            const raw = $('modifyPlayerData').value.trim();
+            if (!name || !raw) { showBox('modifyResult', '请填写玩家名称与数据', false); return; }
+            let playerData;
+            try { playerData = JSON.parse(raw); }
+            catch (err) { showBox('modifyResult', 'JSON 格式错误: ' + err.message, false); return; }
+            manageFetch(`/manage/modify/${encodeURIComponent(name)}`, { playerData }).then(() => {
+                showBox('modifyResult', `成功修改玩家 ${name}`, true);
+                renderModifySummary(playerData);
+            }).catch(err => showBox('modifyResult', err.message, false));
+        });
+
+        $('modifyDelete').addEventListener('click', async () => {
+            const name = $('modifyPlayerName').value.trim();
+            if (!name) { showBox('modifyResult', '请输入玩家名称', false); return; }
+            const ok = await confirmDialog({ title: '删除玩家', message: `确定要删除玩家 ${name} 的缓存吗？此操作不可恢复！`, confirmText: '删除' });
+            if (!ok) return;
+            try {
+                await manageFetch(`/manage/delete/${encodeURIComponent(name)}`);
+                showBox('modifyResult', `成功删除玩家 ${name}`, true);
+                $('modifyPlayerName').value = '';
+                $('modifyPlayerData').value = '';
+                $('modifySummary').innerHTML = '';
+                if (currentTab === 'players') await loadPlayers(true);
+            } catch (e) {
+                showBox('modifyResult', e.message, false);
+            }
+        });
+
+        /* ==================== 初始化 ==================== */
+        initTheme();
+        updateBanUI();
+        updateBanTimeMode();
+
+        $('logoutBtn').addEventListener('click', async () => {
+            try {
+                await fetch(PANEL_PATH + '/logout', { method: 'POST' });
+            } catch (e) { /* 忽略网络错误 */ }
+            sessionStorage.removeItem(CREDS_KEY);
+            location.href = PANEL_PATH;
+        });
+
+        /* ============ 添加新账号（与退出登录分离） ============ */
+        function showAddAccountModal() {
+            const sel = $('addMethodSelect');
+            sel.innerHTML = '';
+            const creds = getCreds();
+            state.methodConfigs.forEach(m => {
+                const suffix = (creds && creds.url === m.url) ? '（当前）' : '';
+                sel.appendChild(h('option', { value: m.url, text: `${m.name || 'default'} (${m.url})${suffix}` }));
+            });
+            $('addSecretKey').value = '';
+            $('addAccountError').className = 'result-box';
+            $('addAccountOverlay').classList.remove('hidden');
+            $('addSecretKey').focus();
+        }
+        function hideAddAccountModal() {
+            $('addAccountOverlay').classList.add('hidden');
+        }
+        $('addAccountBtn').addEventListener('click', showAddAccountModal);
+        $('addAccountCancel').addEventListener('click', hideAddAccountModal);
+        $('addAccountOverlay').addEventListener('click', e => {
+            if (e.target === $('addAccountOverlay')) hideAddAccountModal();
+        });
+        $('addSecretToggle').addEventListener('click', () => {
+            const input = $('addSecretKey');
+            const show = input.type === 'password';
+            input.type = show ? 'text' : 'password';
+            $('addSecretToggle').textContent = show ? '🙈' : '👁';
+        });
+        $('addAccountConfirm').addEventListener('click', async () => {
+            const url = $('addMethodSelect').value;
+            const secret = $('addSecretKey').value.trim();
+            if (!url || !secret) {
+                $('addAccountError').textContent = '请选择子配置并输入密钥';
+                $('addAccountError').className = 'result-box show error';
                 return;
             }
-
+            const btn = $('addAccountConfirm');
+            setLoading(btn, true);
             try {
-                const response = await fetch(`${method.url}/ban/name/${playerName}/-1`, {
+                const resp = await fetch(PANEL_PATH + '/login', {
                     method: 'POST',
                     headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify({ secret })
+                    body: JSON.stringify({ url: url, secret: secret, remember: true })
                 });
-
-                const result = await response.json();
-                if (result.success) {
-                    showResult(`已解除玩家 ${playerName} 的封禁`, true, 'banListResult');
-                    loadBannedPlayerList();
-                } else {
-                    showResult(result.error || '解封失败', false, 'banListResult');
+                let data = null;
+                try { data = await resp.json(); } catch (err) { /* 非 JSON */ }
+                if (!resp.ok) {
+                    const msg = (data && data.error) || ('登录失败 (' + resp.status + ')');
+                    $('addAccountError').textContent = msg;
+                    $('addAccountError').className = 'result-box show error';
+                    return;
                 }
-            } catch (e) {
-                showResult('请求失败: ' + e.message, false, 'banListResult');
+                if ($('addSaveAccount').checked) {
+                    const name = (state.methodConfigs.find(m => m.url === url) || {}).name || 'default';
+                    const list = loadAccounts().filter(a => a.url !== url);
+                    list.unshift({ url: url, name: name, secret: secret, remember: true });
+                    localStorage.setItem(ACCOUNTS_KEY, JSON.stringify(list));
+                }
+                sessionStorage.setItem(CREDS_KEY, JSON.stringify({ url: url, secret: secret }));
+                hideAddAccountModal();
+                $('sessionName').textContent = data.name || 'default';
+                $('sessionUrl').textContent = url;
+                renderAccountSwitch();
+                toast(`已登录并切换到 ${data.name || url}`, 'success');
+                await testConnection();
+            } catch (err) {
+                $('addAccountError').textContent = '请求失败: ' + err.message;
+                $('addAccountError').className = 'result-box show error';
+            } finally {
+                setLoading(btn, false);
             }
-        }
+        });
 
-        async function loadPlayerData() {
+        $('accountSwitch').addEventListener('change', async (e) => {
+            const url = e.target.value;
+            if (!url) { renderAccountSwitch(); return; }
+            const acc = loadAccounts().find(a => a.url === url);
+            if (!acc) { toast('未找到该账号', 'warning'); renderAccountSwitch(); return; }
+            const btn = $('logoutBtn');
+            setLoading(btn, true);
+            try {
+                const resp = await fetch(PANEL_PATH + '/login', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ url: acc.url, secret: acc.secret, remember: acc.remember === true })
+                });
+                let data = null;
+                try { data = await resp.json(); } catch (err) { /* 非 JSON */ }
+                if (!resp.ok) {
+                    toast((data && data.error) || '切换失败 (' + resp.status + ')', 'error');
+                    renderAccountSwitch();
+                    return;
+                }
+                sessionStorage.setItem(CREDS_KEY, JSON.stringify({ url: acc.url, secret: acc.secret }));
+                $('sessionName').textContent = acc.name || 'default';
+                $('sessionUrl').textContent = acc.url;
+                toast(`已切换到 ${acc.name || acc.url}`, 'success');
+                await testConnection();
+            } catch (err) {
+                toast('切换失败: ' + err.message, 'error');
+                renderAccountSwitch();
+            } finally {
+                setLoading(btn, false);
+            }
+        });
+
+        async function initPanel() {
+            await loadMethodConfigs();
             const method = getSelectedMethod();
-            const secret = getSecret();
-            const playerName = document.getElementById('modifyPlayerName').value;
-            if (!method || !secret || !playerName) {
-                showResult('请填写完整信息', false, 'modifyResult');
+            if (!method) {
+                // 无会话凭据或子配置已变更：回登录页
+                location.href = PANEL_PATH;
                 return;
             }
-
-            try {
-                const response = await fetch(`${method.url}/manage/query/${playerName}`, {
-                    method: 'POST',
-                    headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify({ secret })
-                });
-
-                const result = await response.json();
-                if (result.success) {
-                    document.getElementById('modifyPlayerData').value = JSON.stringify(result.data, null, 2);
-                    showResult('数据加载成功', true, 'modifyResult');
-                } else {
-                    showResult(result.error || '加载失败', false, 'modifyResult');
-                }
-            } catch (e) {
-                showResult('请求失败: ' + e.message, false, 'modifyResult');
-            }
+            $('sessionName').textContent = method.name || 'default';
+            $('sessionUrl').textContent = method.url;
+            renderAccountSwitch();
+            await testConnection();
         }
-
-        async function modifyPlayer() {
-            const method = getSelectedMethod();
-            const secret = getSecret();
-            const playerName = document.getElementById('modifyPlayerName').value;
-            const playerDataStr = document.getElementById('modifyPlayerData').value;
-
-            if (!method || !secret || !playerName || !playerDataStr) {
-                showResult('请填写完整信息', false, 'modifyResult');
-                return;
-            }
-
-            try {
-                const playerData = JSON.parse(playerDataStr);
-                const response = await fetch(`${method.url}/manage/modify/${playerName}`, {
-                    method: 'POST',
-                    headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify({ secret, playerData })
-                });
-
-                const result = await response.json();
-                if (result.success) {
-                    showResult(`成功修改玩家 ${playerName}`, true, 'modifyResult');
-                } else {
-                    showResult(result.error || '修改失败', false, 'modifyResult');
-                }
-            } catch (e) {
-                showResult('请求失败: ' + e.message, false, 'modifyResult');
-            }
-        }
-
-        async function deletePlayer() {
-            const method = getSelectedMethod();
-            const secret = getSecret();
-            const playerName = document.getElementById('modifyPlayerName').value;
-
-            if (!method || !secret || !playerName) {
-                showResult('请填写完整信息', false, 'modifyResult');
-                return;
-            }
-
-            if (!confirm(`确定要删除玩家 ${playerName} 的缓存吗？此操作不可恢复！`)) {
-                return;
-            }
-
-            try {
-                const response = await fetch(`${method.url}/manage/delete/${playerName}`, {
-                    method: 'POST',
-                    headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify({ secret })
-                });
-
-                const result = await response.json();
-                if (result.success) {
-                    document.getElementById('modifyPlayerName').value = '';
-                    document.getElementById('modifyPlayerData').value = '';
-                    showResult(`成功删除玩家 ${playerName}`, true, 'modifyResult');
-                } else {
-                    showResult(result.error || '删除失败', false, 'modifyResult');
-                }
-            } catch (e) {
-                showResult('请求失败: ' + e.message, false, 'modifyResult');
-            }
-        }
-
-        async function viewPlayer(playerName) {
-            document.getElementById('queryPlayerName').value = playerName;
-            switchTabByName('query');
-            await queryPlayer();
-        }
-
-        async function quickDelete(playerName) {
-            const method = getSelectedMethod();
-            const secret = getSecret();
-            if (!method || !secret) return;
-
-            if (!confirm(`确定要删除玩家 ${playerName} 的缓存吗？此操作不可恢复！`)) {
-                return;
-            }
-
-            try {
-                const response = await fetch(`${method.url}/manage/delete/${playerName}`, {
-                    method: 'POST',
-                    headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify({ secret })
-                });
-
-                const result = await response.json();
-                if (result.success) {
-                    showResult(`成功删除玩家 ${playerName}`, true, 'playerListResult');
-                    loadPlayerList();
-                } else {
-                    showResult(result.error || '删除失败', false, 'playerListResult');
-                }
-            } catch (e) {
-                showResult('请求失败: ' + e.message, false, 'playerListResult');
-            }
-        }
-
-        function switchTabByName(tabName) {
-            const tabs = document.querySelectorAll('.tab');
-            const contents = document.querySelectorAll('.tab-content');
-
-            tabs.forEach(tab => tab.classList.remove('active'));
-            contents.forEach(content => content.classList.remove('active'));
-
-            const tabButtons = ['players', 'query', 'ban', 'modify'];
-            const idx = tabButtons.indexOf(tabName);
-            if (idx >= 0) {
-                tabs[idx].classList.add('active');
-                document.getElementById(tabName + 'Tab').classList.add('active');
-            }
-        }
-
-        window.onload = function () {
-            loadMethodConfigs();
-            updateBanUI();
-            renderBannedPlayerList();
-        };
+        initPanel();
     </script>
 </body>
 

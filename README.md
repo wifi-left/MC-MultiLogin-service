@@ -41,7 +41,15 @@ npm install
 - `port`: 如字面意思，端口
 - `manage_port`: 管理服务器的端口。若设置此项，管理API（封禁、查询、修改、删除玩家缓存）和管理面板将运行在此独立端口上，与 Minecraft 登录 API 端口分离。**建议设置此项**，避免管理接口暴露到对外的 API 端口。若不设置，管理路由仍挂载在主端口上（向后兼容）。
 - `manage_url`: 管理面板网页的访问路径，默认为 `/manage`。例如设置为 `/admin` 后，可通过 `http://域名:manage_port/admin` 访问管理界面。
+- `manage_host`: 管理服务器监听的地址，代码默认 `127.0.0.1`（仅本机可访问，最安全）。若需要从外网直接访问管理面板，请显式设置为 `"0.0.0.0"`。
+- `manage_rate_limit`: 管理接口限流（每 IP 每分钟允许的请求数，默认 `120`，`0` 关闭）。用于防止暴力猜解 `secret`。批量操作（批量删除/解封）也走该额度，请勿设置过小。
+- `public_rate_limit`: 公开登录/皮肤接口（`hasJoined`、profile 查询、bulk 查询）限流（每 IP 每分钟默认 `60`，`0` 关闭）。防止被当作上游代理轰炸或反复触发缓存目录扫描。
+- `body_limit_mb`: POST 请求体大小上限（MB，默认 `1`，超限返回 413）。防止超大请求体耗尽内存。
+- `manage_trust_proxy`: 仅当管理端口部署在 nginx 等反向代理之后时设为 `true`，服务端将通过 `X-Forwarded-For` 获取真实客户端 IP 用于限流和日志。**直接对外暴露管理端口时请保持 `false`**，否则攻击者可伪造请求头绕过限流。
+- `manage_https_cert` / `manage_https_key`: 可选。若不想使用反向代理，可让管理服务器直接启用 HTTPS，两项分别填写证书与私钥文件的路径（相对于项目根目录）。留空则使用 HTTP。**管理端口需要从公网访问时强烈建议启用 HTTPS 或置于 HTTPS 反向代理之后**，否则密钥会以明文在网络上传输。
+- `manage_session_hours`: 管理面板登录会话有效时长（小时，默认 `12`）。勾选登录页"记住我"时为 7 天。
 - `log_remaining_number`: 历史日志保留个数。如果不想保留请设置为 -1。
+- `fetch_timeout`: 登录/皮肤验证时请求上游验证服务器的超时时间（毫秒，默认 `10000`）。防止上游服务器响应缓慢或无响应时阻塞登录请求。
 - `skinDomains`: 就是皮肤站 `api/yggdrasil` 的 skinDomains，可以随便改，建议加上所有可能出现的皮肤域名。（比如`littleskin.cn`）
 - `apis`: API配置。详见[API子配置章节](#API子配置)
 - `default`: 如果没有找到玩家数据，默认使用的皮肤站。如 `original` 会使用原版API（预置）。
@@ -114,15 +122,41 @@ npm install
 启用 `manage_port` 后，以下管理端点仅在管理端口可用：
 
 - `POST {url}/manage/query/{player}` — 查询玩家缓存（请求体：`{"secret": "..."}`）
-- `POST {url}/manage/list` — 列出所有缓存玩家
+- `POST {url}/manage/list` — 列出缓存玩家。**支持服务端分页/搜索/排序**：请求体可带 `page`（页码，默认 1）、`pageSize`（每页条数，不传或 0 时返回全部，向后兼容）、`search`（关键字）、`field`（`all`/`name`/`uuid`/`from`）、`sort`（`name`/`uuid`/`from`/`lastLogin`）、`dir`（1 升序 / -1 降序）。返回 `players`（当前页）、`total`（匹配总数）。列表走内存索引，不逐文件读取
+- `POST {url}/manage/stats` — 概览统计（请求体：`{"secret": "..."}`）：返回 `total`、`banned`、`forever`、`temp`、`sourceCount`、`sources`（来源分布）、`recentLogins`、`recentBans`，全部基于内存索引计算
+- `POST {url}/manage/export` — 导出全量玩家数据（请求体：`{"secret": "..."}`，返回 `players: [{name, uuid, from, lastLogin}]`），仅在显式导出时使用
 - `POST {url}/manage/bans` — 列出当前被封禁玩家及封禁信息（请求体：`{"secret": "..."}`；返回 `name`、`banReason`、`banStart`、`banTime`）
 - `POST {url}/manage/modify/{player}` — 修改玩家缓存（请求体：`{"secret": "...", "playerData": {...}}`）
 - `POST {url}/manage/delete/{player}` — 删除玩家缓存
 - `POST {url}/manage/rebuild-uuid` — 一键按当前玩家缓存文件重建 UUID->玩家名索引表（请求体：`{"secret": "..."}`）
+- `POST {url}/manage/batch-delete` — 批量删除玩家缓存（请求体：`{"secret": "...", "players": ["a", "b"]}`）
+- `POST {url}/manage/batch-unban` — 批量解除封禁（请求体：`{"secret": "...", "players": ["a", "b"]}`）
 - `POST {url}/ban/uuid/{uuid}/{time}` — 按UUID封禁（0=永久，-1=解封，正整数=毫秒时长）
 - `POST {url}/ban/name/{name}/{time}` — 按名称封禁
 
-管理面板网页：`http://域名:manage_port{manage_url}`（默认 `/manage`）
+### 管理面板登录
+
+管理面板网页位于 `http://域名:manage_port{manage_url}`（默认 `/manage`），只能通过配置的 `manage_url` 路径访问，根路径不提供跳转。
+
+管理面板**必须先登录才能访问**：
+
+- 未登录访问管理路径时，服务器只返回登录页。
+- 登录页选择子配置并输入对应 `secret`，通过校验后服务器下发 httpOnly 会话 Cookie（默认 12 小时有效，勾选"记住我"则 7 天；会话时长可通过 `manage_session_hours` 配置），随后跳转到管理主页面。
+- 主页面所有管理接口仍按原有约定在请求体中携带 `secret`（由登录页保存在浏览器当前会话中，关闭浏览器即清除）。
+- **多账号**：登录页勾选"保存账号与密码"后，账号（子配置 + 密钥）会保存在浏览器本地（`localStorage`），登录页会列出已保存账号，可一键登录或删除；管理面板顶部的"切换账号"下拉可直接在多个已保存账号之间切换，无需重新输入密钥。"添加新账号"按钮可在面板内直接登录并切换新子配置，与"退出登录"相互独立。
+- 点击"退出登录"会清除会话 Cookie 并返回登录页。服务器重启后会话签名密钥变化，已登录会话自动失效，需重新登录。
+- 登录接口 `POST {manage_url}/login`（请求体 `{"url": "...", "secret": "...", "remember": true|false}`）与其它管理接口一样受 `manage_rate_limit` 限流保护，防止暴力猜解。
+- 安全提示：保存的账号密钥以明文形式存储于本机浏览器，请勿在公共电脑上勾选"保存账号与密码"；管理端口请尽量通过 HTTPS 访问。
+
+所有管理接口都需要在请求体中携带正确密钥 `secret`，密钥比较使用常量时间算法，且每个来源 IP 受 `manage_rate_limit` 限流保护。
+
+### 管理面板安全建议
+
+- 管理端口若无需公网访问，请将 `manage_host` 设为 `127.0.0.1`（代码默认值）并配合 SSH 隧道访问。
+- 若需要公网访问，强烈建议将管理端口置于 **HTTPS 反向代理**（如 nginx）之后，或启用 `manage_https_cert` / `manage_https_key` 原生 HTTPS，避免 `secret` 明文传输。
+- 使用足够长且随机的 `secret`，不要使用示例中的 `your_secret_key_here`。
+- 管理面板中，密钥默认仅保存在当前会话（`sessionStorage`），关闭页面即清除；勾选"记住密钥"后才会保存在本地存储中。请勿在公共电脑上勾选。
+- 管理面板所有动态内容均经过转义处理，防止来自玩家数据的 XSS 注入；管理接口也均设置了防点击劫持（`X-Frame-Options`）、CSP（`frame-ancestors 'none'`）等安全响应头。
 
 ### detail 错误详情参数
 

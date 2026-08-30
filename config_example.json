@@ -2,8 +2,17 @@
     "port": 25600,
     "manage_port": 25601,
     "manage_url": "/manage",
+    "manage_host": "127.0.0.1",
+    "manage_rate_limit": 120,
+    "public_rate_limit": 60,
+    "body_limit_mb": 1,
+    "manage_trust_proxy": false,
+    "manage_https_cert": "",
+    "manage_https_key": "",
+    "manage_session_hours": 12,
     "log_remaining_number": 5,
     "login_cooldown": 5000,
+    "fetch_timeout": 10000,
     "skinDomains": [
         "littleskin.cn"
     ],

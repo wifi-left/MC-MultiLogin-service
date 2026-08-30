@@ -1,6 +1,8 @@
 const path = require("path");
 const http = require('http');        // HTTP服务器API
+const https = require('https');      // HTTPS服务器API（管理端口可选启用）
 const fs = require('fs');            // 文件系统API
+const crypto = require('crypto');    // 常量时间比较密钥
 const express = require('express');
 const { class_PlayerCache, checkName } = require("./playercache.js");
 const { log, globleConfig } = require('./utils.js');
@@ -12,7 +14,20 @@ var server = null;
 var DefaultSKINSITE = "original";
 
 const Fetch = fetch;
-// const iconv = require('iconv-lite')
+// 上游验证请求带超时（fetch_timeout，默认 10s），防止上游挂起导致登录请求永久阻塞、
+// 以及 pending_players 标志泄漏造成该玩家被永久"登录过快"拦截
+var fetchTimeoutMs = parseInt(globleConfig.get("fetch_timeout", 10000)) || 10000;
+function fetchWithTimeout(url, options) {
+    const controller = new AbortController();
+    const timer = setTimeout(() => controller.abort(), fetchTimeoutMs);
+    return Fetch(url, Object.assign({}, options, { signal: controller.signal })).finally(() => clearTimeout(timer));
+}
+// 构建 hasJoined 上游查询串：所有参数 encodeURIComponent，防止注入额外查询参数
+function buildHasJoinedQuery(username, serverId, ip) {
+    let q = `?username=${encodeURIComponent(username)}&serverId=${encodeURIComponent(serverId || '')}`;
+    if (ip != null) q += `&ip=${encodeURIComponent(ip)}`;
+    return q;
+}
 const readline = require('readline').createInterface({
     input: process.stdin,
     output: process.stdout
@@ -28,8 +43,171 @@ var PlayerCaches = {};
 // 管理服务器配置
 var manageUrl = globleConfig.get("manage_url", "/manage");
 var manageApp = globleConfig.get("manage_port", 0) > 0 ? express() : null;
+var manageHost = globleConfig.get("manage_host", "127.0.0.1");
 var managePort = 0;
 var manageServer = null;
+var manageHttpsOptions = null;
+
+// 如果管理端口启用了 trust proxy（部署在 nginx 等反代后面），
+// req.ip 会取真实客户端 IP，限流和日志才能按真实来源统计。
+if (manageApp && globleConfig.get("manage_trust_proxy", false) === true) {
+    manageApp.set('trust proxy', 1);
+}
+
+// 读取 HTTPS 配置（manage_https_cert / manage_https_key），两者都存在且文件可读时管理端口使用 HTTPS
+function initManageHttps() {
+    let cert = globleConfig.get("manage_https_cert", "");
+    let key = globleConfig.get("manage_https_key", "");
+    if (!cert || !key) {
+        manageHttpsOptions = null;
+        return;
+    }
+    try {
+        manageHttpsOptions = {
+            cert: fs.readFileSync(path.join(__dirname, cert)),
+            key: fs.readFileSync(path.join(__dirname, key))
+        };
+    } catch (e) {
+        manageHttpsOptions = null;
+        log(`[WARN] Cannot load manage_https_cert/key (${e.message}), management server will use HTTP.`);
+    }
+}
+function listenManageServer() {
+    if (manageHttpsOptions) {
+        manageServer = https.createServer(manageHttpsOptions, manageApp).listen(managePort, manageHost);
+    } else {
+        manageServer = manageApp.listen(managePort, manageHost);
+    }
+}
+
+// 管理路由安全响应头（防点击劫持 / 类型嗅探 / 信息泄露）
+function manageSecurityHeaders(req, res, next) {
+    res.setHeader('X-Frame-Options', 'DENY');
+    res.setHeader('X-Content-Type-Options', 'nosniff');
+    res.setHeader('Referrer-Policy', 'no-referrer');
+    next();
+}
+
+// 管理接口限流：每 IP 每分钟最多 manage_rate_limit 次（默认 120，0 关闭），防暴力猜密钥
+var manageRateBuckets = new Map();
+function manageLimiter(req, res, next) {
+    let limit = parseInt(globleConfig.get("manage_rate_limit", 120)) || 0;
+    if (limit <= 0) { next(); return; }
+    let ip = req.ip || 'unknown';
+    let now = Date.now();
+    let bucket = manageRateBuckets.get(ip);
+    if (!bucket || (now - bucket.start) >= 60000) {
+        bucket = { start: now, count: 0 };
+        manageRateBuckets.set(ip, bucket);
+    }
+    // 清理过期桶，防止内存无限增长
+    if (manageRateBuckets.size > 10000) {
+        for (let [k, b] of manageRateBuckets) {
+            if ((now - b.start) >= 60000) manageRateBuckets.delete(k);
+        }
+    }
+    bucket.count++;
+    if (bucket.count > limit) {
+        res.status(429).send({ "error": "Too many requests. Please wait a moment and retry." }).end();
+        return;
+    }
+    next();
+}
+
+// 公开端点限流（hasJoined/profiles/profiles_post）：防止被用作上游代理轰炸或反复触发目录扫描
+// 每 IP 每分钟 public_rate_limit 次（默认 60，0 关闭）
+var publicRateBuckets = new Map();
+function publicLimiter(req, res, next) {
+    let limit = parseInt(globleConfig.get("public_rate_limit", 60)) || 0;
+    if (limit <= 0) { next(); return; }
+    let ip = req.ip || 'unknown';
+    let now = Date.now();
+    let bucket = publicRateBuckets.get(ip);
+    if (!bucket || (now - bucket.start) >= 60000) {
+        bucket = { start: now, count: 0 };
+        publicRateBuckets.set(ip, bucket);
+    }
+    if (publicRateBuckets.size > 10000) {
+        for (let [k, b] of publicRateBuckets) {
+            if ((now - b.start) >= 60000) publicRateBuckets.delete(k);
+        }
+    }
+    bucket.count++;
+    if (bucket.count > limit) {
+        res.status(429).send({ "error": "Too many requests. Please wait a moment and retry." }).end();
+        return;
+    }
+    next();
+}
+
+// 常量时间比较密钥，避免时序侧信道
+function safeSecretEqual(a, b) {
+    if (typeof a !== 'string' || typeof b !== 'string') return false;
+    let ha = crypto.createHash('sha256').update(a).digest();
+    let hb = crypto.createHash('sha256').update(b).digest();
+    return crypto.timingSafeEqual(ha, hb);
+}
+
+// 请求体大小限制：防止超大请求体导致内存耗尽（超限返回 413 并终止请求）
+// 返回可变对象 { value }，data 事件累积到 value，调用方在 end 事件中读取 body.value
+var bodyLimitBytes = (parseInt(globleConfig.get("body_limit_mb", 1)) || 1) * 1024 * 1024;
+function readBodyAccumulator(req, res, limitBytes = bodyLimitBytes) {
+    const acc = { value: '' };
+    let size = 0;
+    req.on('data', (chunk) => {
+        size += chunk.length;
+        if (size > limitBytes) {
+            res.status(413).send({ "error": "Request body too large" }).end();
+            req.destroy();
+            return;
+        }
+        acc.value += chunk;
+    });
+    return acc;
+}
+
+// ===== 管理面板登录会话（httpOnly Cookie，未登录无法访问管理主页面） =====
+var adminSessionKey = crypto.randomBytes(32); // 会话签名密钥，重启后会话失效
+var ADMIN_SESSION_COOKIE = 'ml_admin_session';
+function issueSessionToken(methodUrl, ttlMs) {
+    let payload = Buffer.from(JSON.stringify({ m: methodUrl, exp: Date.now() + ttlMs })).toString('base64url');
+    let sig = crypto.createHmac('sha256', adminSessionKey).update(payload).digest('base64url');
+    return payload + '.' + sig;
+}
+function verifySessionToken(token) {
+    if (typeof token !== 'string' || token.indexOf('.') < 0) return null;
+    let parts = token.split('.');
+    if (parts.length !== 2) return null;
+    let expected;
+    try {
+        expected = crypto.createHmac('sha256', adminSessionKey).update(parts[0]).digest('base64url');
+    } catch (e) {
+        return null;
+    }
+    let sb = Buffer.from(parts[1]), eb = Buffer.from(expected);
+    if (sb.length !== eb.length || !crypto.timingSafeEqual(sb, eb)) return null;
+    try {
+        let data = JSON.parse(Buffer.from(parts[0], 'base64url').toString());
+        if (!data || !data.m || !data.exp || Date.now() > data.exp) return null;
+        return data;
+    } catch (e) {
+        return null;
+    }
+}
+function parseCookies(req) {
+    let out = {};
+    let raw = req.headers.cookie;
+    if (!raw) return out;
+    raw.split(';').forEach(pair => {
+        let i = pair.indexOf('=');
+        if (i < 0) return;
+        out[pair.slice(0, i).trim()] = decodeURIComponent(pair.slice(i + 1).trim());
+    });
+    return out;
+}
+function getAdminSession(req) {
+    return verifySessionToken(parseCookies(req)[ADMIN_SESSION_COOKIE]);
+}
 // HTML 开始处理
 // 注册URL
 if (HANDLES == null || HANDLES.length <= 0) {
@@ -56,24 +234,28 @@ for (let i = 0; i < HANDLES.length; i++) {
     PlayerCaches[idx] = new class_PlayerCache(cachePath);
     console.log("Register url path: " + url + " with cache: " + cachePath);
     app.get(url, function (req, res) { urlHandle_root(req, res, idx) });
-    app.post(`${url}/api/profiles/minecraft`, function (req, res) { urlHandle_profiles_post(req, res, idx) });
-    app.get(`${url}/sessionserver/session/minecraft/hasJoined`, function (req, res) { urlHandle_joinServer(req, res, idx) });
-    app.post(`${url}/minecraftservices/minecraft/profile/lookup/bulk/byname`, function (req, res) { urlHandle_profiles_post(req, res, idx) });
-    app.get(`${url}/sessionserver/session/minecraft/profile/*`, function (req, res) { urlHandle_profiles(req, res, idx) })
-    app.get(`${url}/api/minecraft/profile/lookup/name/*`, function (req, res) { urlHandle_profiles(req, res, idx) })
+    app.post(`${url}/api/profiles/minecraft`, publicLimiter, function (req, res) { urlHandle_profiles_post(req, res, idx) });
+    app.get(`${url}/sessionserver/session/minecraft/hasJoined`, publicLimiter, function (req, res) { urlHandle_joinServer(req, res, idx) });
+    app.post(`${url}/minecraftservices/minecraft/profile/lookup/bulk/byname`, publicLimiter, function (req, res) { urlHandle_profiles_post(req, res, idx) });
+    app.get(`${url}/sessionserver/session/minecraft/profile/*`, publicLimiter, function (req, res) { urlHandle_profiles(req, res, idx) })
+    app.get(`${url}/api/minecraft/profile/lookup/name/*`, publicLimiter, function (req, res) { urlHandle_profiles(req, res, idx) })
 
     // Ban API endpoints
     let mApp = manageApp || app;
-    mApp.post(`${url}/ban/uuid/:uuid/:time`, function (req, res) { urlHandle_ban_uuid(req, res, idx) });
-    mApp.post(`${url}/ban/name/:name/:time`, function (req, res) { urlHandle_ban_name(req, res, idx) });
+    mApp.post(`${url}/ban/uuid/:uuid/:time`, manageLimiter, function (req, res) { urlHandle_ban_uuid(req, res, idx) });
+    mApp.post(`${url}/ban/name/:name/:time`, manageLimiter, function (req, res) { urlHandle_ban_name(req, res, idx) });
 
     // Management API endpoints
-    mApp.post(`${url}/manage/query/:player`, function (req, res) { urlHandle_manage_query(req, res, idx) });
-    mApp.post(`${url}/manage/list`, function (req, res) { urlHandle_manage_list(req, res, idx) });
-    mApp.post(`${url}/manage/bans`, function (req, res) { urlHandle_manage_bans(req, res, idx) });
-    mApp.post(`${url}/manage/modify/:player`, function (req, res) { urlHandle_manage_modify(req, res, idx) });
-    mApp.post(`${url}/manage/delete/:player`, function (req, res) { urlHandle_manage_delete(req, res, idx) });
-    mApp.post(`${url}/manage/rebuild-uuid`, function (req, res) { urlHandle_manage_rebuild_uuid(req, res, idx) });
+    mApp.post(`${url}/manage/query/:player`, manageLimiter, function (req, res) { urlHandle_manage_query(req, res, idx) });
+    mApp.post(`${url}/manage/list`, manageLimiter, function (req, res) { urlHandle_manage_list(req, res, idx) });
+    mApp.post(`${url}/manage/bans`, manageLimiter, function (req, res) { urlHandle_manage_bans(req, res, idx) });
+    mApp.post(`${url}/manage/modify/:player`, manageLimiter, function (req, res) { urlHandle_manage_modify(req, res, idx) });
+    mApp.post(`${url}/manage/delete/:player`, manageLimiter, function (req, res) { urlHandle_manage_delete(req, res, idx) });
+    mApp.post(`${url}/manage/rebuild-uuid`, manageLimiter, function (req, res) { urlHandle_manage_rebuild_uuid(req, res, idx) });
+    mApp.post(`${url}/manage/stats`, manageLimiter, function (req, res) { urlHandle_manage_stats(req, res, idx) });
+    mApp.post(`${url}/manage/export`, manageLimiter, function (req, res) { urlHandle_manage_export(req, res, idx) });
+    mApp.post(`${url}/manage/batch-delete`, manageLimiter, function (req, res) { urlHandle_manage_batch_delete(req, res, idx) });
+    mApp.post(`${url}/manage/batch-unban`, manageLimiter, function (req, res) { urlHandle_manage_batch_unban(req, res, idx) });
 
 }
 // 皮肤站处理开始
@@ -140,7 +322,8 @@ function buildDetailError(k, cache, playerName) {
 function trySavePlayer(player, api, response_data, res, from, detail) {
     log("[FOUND] Found <" + player + "> should come from <" + api.name + ">");
     let dat = response_data;
-    let k = PlayerCaches[from].add(dat.name, dat.id, api.id);
+    // 登录时间与 ip 随 add 一次性写入缓存，不再写后再读再写
+    let k = PlayerCaches[from].add(dat.name, dat.id, api.id, { lastLogin: new Date().getTime(), ip: null });
     if (k !== true) {
         if (detail && k && k.error) {
             res.status(403).send(buildDetailError(k, PlayerCaches[from], dat.name)).end();
@@ -149,7 +332,6 @@ function trySavePlayer(player, api, response_data, res, from, detail) {
         }
     } else {
         res.send(response_data).end();
-        PlayerCaches[from].new_login(player, new Date().getTime(), null);
     }
 }
 function urlHandle_root(req, res, from) {
@@ -178,7 +360,7 @@ function fetchPlayerInfo_step(args, apis, res, player, from, detail) {
     b.splice(0, 1);
     log("Looking up " + api.name + " [" + player + "]")
     if (api.id == 'original') {
-        Fetch(`https://sessionserver.mojang.com/session/minecraft/hasJoined${args}`).then(data => {
+        fetchWithTimeout(`https://sessionserver.mojang.com/session/minecraft/hasJoined${args}`).then(data => {
             if (data.status == 204) {
                 throw "Not found";
             }
@@ -200,7 +382,7 @@ function fetchPlayerInfo_step(args, apis, res, player, from, detail) {
         })
 
     } else {
-        Fetch(api.root + `/sessionserver/session/minecraft/hasJoined${args}`).then(data => {
+        fetchWithTimeout(api.root + `/sessionserver/session/minecraft/hasJoined${args}`).then(data => {
             if (data.status == 204) {
                 throw "Not found";
             }
@@ -249,6 +431,8 @@ function urlHandle_joinServer(req, res, from) {
         return;
     }
     let info = PlayerCaches[from].lookup(username);
+    // 请求内文件是否被本流程重写过（封禁超时解封会重写文件，导致本地 info 与磁盘不一致）
+    let infoFresh = true;
     if (info) {
         if (info.ban == true) {
             if (info.banTime == 0) {
@@ -261,6 +445,7 @@ function urlHandle_joinServer(req, res, from) {
             else if (info.banTime <= new Date().getTime()) {
                 info.ban = false;
                 PlayerCaches[from].new_ban(username, -1)
+                infoFresh = false;
                 console.log("<" + username + "> was unbanned (Timeout).")
             } else {
                 console.log("Player was banned.")
@@ -292,11 +477,11 @@ function urlHandle_joinServer(req, res, from) {
         log("Looking up for " + profile_name + " but not found. Try to search for it.");
         pending_players[profile_name] = true;
         let newH = JSON.parse(JSON.stringify(handle.handles))
-        fetchPlayerInfo_step(`?username=${encodeURI(username)}&serverId=${serverId}${ip == null ? "" : `&ip=${ip}`}`, newH, res, username, from, detail);
+        fetchPlayerInfo_step(buildHasJoinedQuery(username, serverId, ip), newH, res, username, from, detail);
     } else {
         if (handle.handles.includes(api.id)) {
             if (api.id == 'original') {
-                Fetch(`https://sessionserver.mojang.com/session/minecraft/hasJoined?username=${encodeURI(username)}&serverId=${serverId}${ip == null ? "" : `&ip=${ip}`}`).then(data => {
+                fetchWithTimeout('https://sessionserver.mojang.com/session/minecraft/hasJoined' + buildHasJoinedQuery(username, serverId, ip)).then(data => {
                     if (data.status == 204) {
                         console.log(`<${username}> was not found.`);
                         detailReject(res, detail, "VERIFY_FAILED", getMsg("VERIFY_FAILED", { name: api.name }));
@@ -307,10 +492,10 @@ function urlHandle_joinServer(req, res, from) {
                 }
                 ).then(data => {
                     log('[JOIN][' + handle.name + '] <' + username + "> was allowed to join from <" + api.name + ">");
-                    if (!PlayerCaches[from].lookup(username)) {
+                    if (!info) {
                         trySavePlayer(username, api, data, res, from, detail);
                     } else {
-                        PlayerCaches[from].new_login(username, new Date().getTime(), ip);
+                        PlayerCaches[from].new_login(username, new Date().getTime(), ip, infoFresh ? info : null);
                         res.send(data).end();
                     }
                     // 
@@ -322,7 +507,7 @@ function urlHandle_joinServer(req, res, from) {
                 })
 
             } else {
-                Fetch(api.root + `/sessionserver/session/minecraft/hasJoined?username=${encodeURI(username)}&serverId=${serverId}${ip == null ? "" : `&ip=${ip}`}`).then(data => {
+                fetchWithTimeout(api.root + '/sessionserver/session/minecraft/hasJoined' + buildHasJoinedQuery(username, serverId, ip)).then(data => {
                     if (data.status == 204) {
                         console.log(`<${username}> was not found.`);
                         detailReject(res, detail, "VERIFY_FAILED", getMsg("VERIFY_FAILED", { name: api.name }));
@@ -332,10 +517,10 @@ function urlHandle_joinServer(req, res, from) {
                     return data.json()
                 }).then(data => {
                     log('[JOIN][' + handle.name + '] <' + username + "> was allowed to join from <" + api.name + ">");
-                    if (!PlayerCaches[from].lookup(username)) {
+                    if (!info) {
                         trySavePlayer(username, api, data, res, from, detail);
                     } else {
-                        PlayerCaches[from].new_login(username, new Date().getTime(), ip);
+                        PlayerCaches[from].new_login(username, new Date().getTime(), ip, infoFresh ? info : null);
                         res.send(data).end();
                     }
                     // res.send(data).end();
@@ -411,7 +596,7 @@ function urlHandle_profiles(req, res, from) {
     if (profile_name == null) {
         log("[PROFILE] Looking up for " + url + " from <Original>");
         {
-            Fetch("https://sessionserver.mojang.com/session/minecraft/profile/" + url).then(data => {
+            fetchWithTimeout("https://sessionserver.mojang.com/session/minecraft/profile/" + encodeURIComponent(url)).then(data => {
                 res.status(data.status);
                 return data.text()
             }).then(data => {
@@ -425,7 +610,7 @@ function urlHandle_profiles(req, res, from) {
     } else {
         if (url == null) {
             log("[PROFILE] Looking up for " + profile_name + " from <" + api.name + ">");
-            Fetch("https://api.minecraftservices.com/minecraft/profile/lookup/name/" + profile_name).then(data => {
+            fetchWithTimeout("https://api.minecraftservices.com/minecraft/profile/lookup/name/" + encodeURIComponent(profile_name)).then(data => {
                 res.status(data.status);
                 return data.text()
             }).then(data => {
@@ -439,7 +624,7 @@ function urlHandle_profiles(req, res, from) {
         log("[PROFILE] Looking up for " + profile_name + "(" + url + ") from <" + api.name + ">");
 
         if (api.id == 'original') {
-            Fetch("https://sessionserver.mojang.com/session/minecraft/profile/" + url).then(data => {
+            fetchWithTimeout("https://sessionserver.mojang.com/session/minecraft/profile/" + encodeURIComponent(url)).then(data => {
                 res.status(data.status);
                 return data.text()
             }).then(data => {
@@ -450,7 +635,7 @@ function urlHandle_profiles(req, res, from) {
             })
 
         } else {
-            Fetch(api.root + "/sessionserver/session/minecraft/profile/" + url).then(data => {
+            fetchWithTimeout(api.root + "/sessionserver/session/minecraft/profile/" + encodeURIComponent(url)).then(data => {
                 res.status(data.status);
                 return data.text()
             }
@@ -474,14 +659,11 @@ function lookupApi(apiname) {
 function urlHandle_profiles_post(req, res, from) {
     // console.log('404 handler..')
     // console.log(req.url);
-    let body = '';
-    req.on('data', (chunk) => {
-        body += chunk;
-    });
+    let body = readBodyAccumulator(req, res);
     let handle = HANDLES[from];
     req.on('end', () => {
         try {
-            let bdy = JSON.parse(body);
+            let bdy = JSON.parse(body.value);
             if (bdy.length > 1) {
                 res.status(403).send({
                     "error": "ForbiddenOperationException",
@@ -510,7 +692,7 @@ function urlHandle_profiles_post(req, res, from) {
                 }
                 log("[PROFILE][POST] Looking up <" + bdy[i] + "> from <" + api.name + ">")
                 if (api.id == 'original') {
-                    Fetch("https://api.minecraftservices.com/minecraft/profile/lookup/bulk/byname", {
+                    fetchWithTimeout("https://api.minecraftservices.com/minecraft/profile/lookup/bulk/byname", {
                         body: JSON.stringify([bdy[i]]),
                         method: 'POST',
                         headers: {
@@ -528,7 +710,7 @@ function urlHandle_profiles_post(req, res, from) {
 
                 } else {
                     // console.log(api.root + "/api/profiles/minecraft")
-                    Fetch(api.root + "/api/profiles/minecraft", {
+                    fetchWithTimeout(api.root + "/api/profiles/minecraft", {
                         body: body,
                         method: 'POST',
                         headers: {
@@ -569,15 +751,11 @@ function urlHandle_ban_uuid(req, res, from) {
         return;
     }
 
-    let body = '';
-    req.on('data', (chunk) => {
-        body += chunk;
-    });
-
+    let body = readBodyAccumulator(req, res);
     req.on('end', () => {
         try {
-            let data = JSON.parse(body);
-            if (data.secret !== secret) {
+            let data = JSON.parse(body.value);
+            if (!safeSecretEqual(data.secret, secret)) {
                 res.status(403).send({ "error": "Invalid secret key" }).end();
                 return;
             }
@@ -624,15 +802,11 @@ function urlHandle_ban_name(req, res, from) {
         return;
     }
 
-    let body = '';
-    req.on('data', (chunk) => {
-        body += chunk;
-    });
-
+    let body = readBodyAccumulator(req, res);
     req.on('end', () => {
         try {
-            let data = JSON.parse(body);
-            if (data.secret !== secret) {
+            let data = JSON.parse(body.value);
+            if (!safeSecretEqual(data.secret, secret)) {
                 res.status(403).send({ "error": "Invalid secret key" }).end();
                 return;
             }
@@ -677,15 +851,11 @@ function urlHandle_manage_query(req, res, from) {
         return;
     }
 
-    let body = '';
-    req.on('data', (chunk) => {
-        body += chunk;
-    });
-
+    let body = readBodyAccumulator(req, res);
     req.on('end', () => {
         try {
-            let data = JSON.parse(body);
-            if (data.secret !== secret) {
+            let data = JSON.parse(body.value);
+            if (!safeSecretEqual(data.secret, secret)) {
                 res.status(403).send({ "error": "Invalid secret key" }).end();
                 return;
             }
@@ -718,20 +888,78 @@ function urlHandle_manage_list(req, res, from) {
         return;
     }
 
-    let body = '';
-    req.on('data', (chunk) => {
-        body += chunk;
-    });
-
+    let body = readBodyAccumulator(req, res);
     req.on('end', () => {
         try {
-            let data = JSON.parse(body);
-            if (data.secret !== secret) {
+            let data = JSON.parse(body.value);
+            if (!safeSecretEqual(data.secret, secret)) {
                 res.status(403).send({ "error": "Invalid secret key" }).end();
                 return;
             }
 
-            let players = PlayerCaches[from].list_players();
+            // 分页/搜索/排序参数（可选）；不传 pageSize 时返回全部（向后兼容）
+            let page = parseInt(data.page) || 1;
+            let pageSize = parseInt(data.pageSize) || 0;
+            let search = (typeof data.search === 'string') ? data.search : '';
+            let field = ['name', 'uuid', 'from', 'all'].includes(data.field) ? data.field : 'all';
+            let sort = ['name', 'uuid', 'from', 'lastLogin'].includes(data.sort) ? data.sort : 'name';
+            let dir = parseInt(data.dir) || 1;
+
+            let r = PlayerCaches[from].list_players_page({ page, pageSize, search, field, sort, dir });
+            res.send({ "success": true, "players": r.players, "total": r.total, "count": r.total, "page": page, "pageSize": pageSize }).end();
+        } catch (e) {
+            console.error(e);
+            res.status(400).send({ "error": "Invalid request" }).end();
+        }
+    });
+}
+
+function urlHandle_manage_stats(req, res, from) {
+    let handle = HANDLES[from];
+    let secret = handle.secret;
+
+    if (!secret) {
+        res.status(403).send({ "error": "Secret key not configured for this endpoint" }).end();
+        return;
+    }
+
+    let body = readBodyAccumulator(req, res);
+    req.on('end', () => {
+        try {
+            let data = JSON.parse(body.value);
+            if (!safeSecretEqual(data.secret, secret)) {
+                res.status(403).send({ "error": "Invalid secret key" }).end();
+                return;
+            }
+
+            let s = PlayerCaches[from].stats();
+            res.send({ "success": true, ...s }).end();
+        } catch (e) {
+            console.error(e);
+            res.status(400).send({ "error": "Invalid request" }).end();
+        }
+    });
+}
+
+function urlHandle_manage_export(req, res, from) {
+    let handle = HANDLES[from];
+    let secret = handle.secret;
+
+    if (!secret) {
+        res.status(403).send({ "error": "Secret key not configured for this endpoint" }).end();
+        return;
+    }
+
+    let body = readBodyAccumulator(req, res);
+    req.on('end', () => {
+        try {
+            let data = JSON.parse(body.value);
+            if (!safeSecretEqual(data.secret, secret)) {
+                res.status(403).send({ "error": "Invalid secret key" }).end();
+                return;
+            }
+
+            let players = PlayerCaches[from].export_players();
             res.send({ "success": true, "players": players, "count": players.length }).end();
         } catch (e) {
             console.error(e);
@@ -749,15 +977,11 @@ function urlHandle_manage_bans(req, res, from) {
         return;
     }
 
-    let body = '';
-    req.on('data', (chunk) => {
-        body += chunk;
-    });
-
+    let body = readBodyAccumulator(req, res);
     req.on('end', () => {
         try {
-            let data = JSON.parse(body);
-            if (data.secret !== secret) {
+            let data = JSON.parse(body.value);
+            if (!safeSecretEqual(data.secret, secret)) {
                 res.status(403).send({ "error": "Invalid secret key" }).end();
                 return;
             }
@@ -781,15 +1005,11 @@ function urlHandle_manage_modify(req, res, from) {
         return;
     }
 
-    let body = '';
-    req.on('data', (chunk) => {
-        body += chunk;
-    });
-
+    let body = readBodyAccumulator(req, res);
     req.on('end', () => {
         try {
-            let data = JSON.parse(body);
-            if (data.secret !== secret) {
+            let data = JSON.parse(body.value);
+            if (!safeSecretEqual(data.secret, secret)) {
                 res.status(403).send({ "error": "Invalid secret key" }).end();
                 return;
             }
@@ -828,15 +1048,11 @@ function urlHandle_manage_delete(req, res, from) {
         return;
     }
 
-    let body = '';
-    req.on('data', (chunk) => {
-        body += chunk;
-    });
-
+    let body = readBodyAccumulator(req, res);
     req.on('end', () => {
         try {
-            let data = JSON.parse(body);
-            if (data.secret !== secret) {
+            let data = JSON.parse(body.value);
+            if (!safeSecretEqual(data.secret, secret)) {
                 res.status(403).send({ "error": "Invalid secret key" }).end();
                 return;
             }
@@ -868,15 +1084,11 @@ function urlHandle_manage_rebuild_uuid(req, res, from) {
         return;
     }
 
-    let body = '';
-    req.on('data', (chunk) => {
-        body += chunk;
-    });
-
+    let body = readBodyAccumulator(req, res);
     req.on('end', () => {
         try {
-            let data = JSON.parse(body);
-            if (data.secret !== secret) {
+            let data = JSON.parse(body.value);
+            if (!safeSecretEqual(data.secret, secret)) {
                 res.status(403).send({ "error": "Invalid secret key" }).end();
                 return;
             }
@@ -884,6 +1096,90 @@ function urlHandle_manage_rebuild_uuid(req, res, from) {
             let count = PlayerCaches[from].rebuildUUIDCache(false);
             log(`[MANAGE] Rebuilt UUID cache table for <${handle.name || 'default'}>, current entries: ${count}`);
             res.send({ "success": true, "count": count }).end();
+        } catch (e) {
+            console.error(e);
+            res.status(400).send({ "error": "Invalid request" }).end();
+        }
+    });
+}
+
+function urlHandle_manage_batch_delete(req, res, from) {
+    let handle = HANDLES[from];
+    let secret = handle.secret;
+
+    if (!secret) {
+        res.status(403).send({ "error": "Secret key not configured for this endpoint" }).end();
+        return;
+    }
+
+    let body = readBodyAccumulator(req, res);
+    req.on('end', () => {
+        try {
+            let data = JSON.parse(body.value);
+            if (!safeSecretEqual(data.secret, secret)) {
+                res.status(403).send({ "error": "Invalid secret key" }).end();
+                return;
+            }
+
+            if (!Array.isArray(data.players) || data.players.length <= 0) {
+                res.status(400).send({ "error": "Missing players array" }).end();
+                return;
+            }
+
+            let deleted = [];
+            let failed = [];
+            for (let name of data.players) {
+                if (!checkName(name)) { failed.push(name); continue; }
+                if (PlayerCaches[from].delete(name)) {
+                    deleted.push(name);
+                    log(`[MANAGE] Deleted player cache for <${name}> (batch)`);
+                } else {
+                    failed.push(name);
+                }
+            }
+            res.send({ "success": true, "deleted": deleted, "failed": failed }).end();
+        } catch (e) {
+            console.error(e);
+            res.status(400).send({ "error": "Invalid request" }).end();
+        }
+    });
+}
+
+function urlHandle_manage_batch_unban(req, res, from) {
+    let handle = HANDLES[from];
+    let secret = handle.secret;
+
+    if (!secret) {
+        res.status(403).send({ "error": "Secret key not configured for this endpoint" }).end();
+        return;
+    }
+
+    let body = readBodyAccumulator(req, res);
+    req.on('end', () => {
+        try {
+            let data = JSON.parse(body.value);
+            if (!safeSecretEqual(data.secret, secret)) {
+                res.status(403).send({ "error": "Invalid secret key" }).end();
+                return;
+            }
+
+            if (!Array.isArray(data.players) || data.players.length <= 0) {
+                res.status(400).send({ "error": "Missing players array" }).end();
+                return;
+            }
+
+            let unbanned = [];
+            let failed = [];
+            for (let name of data.players) {
+                if (!checkName(name)) { failed.push(name); continue; }
+                if (PlayerCaches[from].new_ban(name, -1)) {
+                    unbanned.push(name);
+                    log(`[MANAGE] Unbanned <${name}> (batch)`);
+                } else {
+                    failed.push(name);
+                }
+            }
+            res.send({ "success": true, "unbanned": unbanned, "failed": failed }).end();
         } catch (e) {
             console.error(e);
             res.status(400).send({ "error": "Invalid request" }).end();
@@ -899,10 +1195,70 @@ app.get('/', function (req, res) {
 })
 // 管理界面和管理API注册到 manageApp（独立管理服务器）或 app（主服务器）
 let uiApp = manageApp || app;
-uiApp.get(manageUrl, function (req, res) {
+const MANAGE_CSP = "default-src 'self' blob:; script-src 'unsafe-inline'; style-src 'unsafe-inline'; img-src 'self' data: blob:; connect-src 'self'; frame-ancestors 'none'; base-uri 'self'; form-action 'self'";
+
+// 登录门控：未登录（无有效会话 Cookie）只返回登录页，登录后才能访问管理主页面
+uiApp.get(manageUrl, manageSecurityHeaders, function (req, res) {
+    res.setHeader('Content-Security-Policy', MANAGE_CSP);
+    let session = getAdminSession(req);
+    if (!session) {
+        res.sendFile(__dirname + "/web/public/" + "login.html");
+        return;
+    }
     res.sendFile(__dirname + "/web/public/" + "manage.html");
 })
-uiApp.get('/api/methods', function (req, res) {
+// 登录接口：校验子配置 URL + 密钥，通过后下发 httpOnly 会话 Cookie
+uiApp.post(manageUrl + '/login', manageSecurityHeaders, manageLimiter, function (req, res) {
+    let body = readBodyAccumulator(req, res);
+    req.on('end', () => {
+        try {
+            let data = JSON.parse(body.value);
+            let idx = HANDLES.findIndex(h => h.url === data.url);
+            if (idx < 0) {
+                res.status(401).send({ "error": "未知的子配置" }).end();
+                return;
+            }
+            let handle = HANDLES[idx];
+            if (!handle.secret) {
+                res.status(401).send({ "error": "该子配置未配置管理密钥（secret）" }).end();
+                return;
+            }
+            if (!safeSecretEqual(String(data.secret || ''), handle.secret)) {
+                log(`[LOGIN] Failed admin login attempt for <${handle.name || data.url}> from ${req.ip}`);
+                res.status(401).send({ "error": "管理密钥错误" }).end();
+                return;
+            }
+            let remember = data.remember === true;
+            let ttlMs = remember ? 7 * 24 * 3600 * 1000 : (parseInt(globleConfig.get("manage_session_hours", 12)) || 12) * 3600 * 1000;
+            let token = issueSessionToken(handle.url, ttlMs);
+            // 启用 HTTPS 时附加 Secure，避免会话 Cookie 经明文 HTTP 传输被窃取
+            let secureFlag = manageHttpsOptions ? '; Secure' : '';
+            res.setHeader('Set-Cookie', `${ADMIN_SESSION_COOKIE}=${token}; HttpOnly; SameSite=Lax; Path=/; Max-Age=${Math.floor(ttlMs / 1000)}${secureFlag}`);
+            log(`[LOGIN] Admin logged in for method <${handle.name || handle.url}> from ${req.ip}`);
+            res.send({ "success": true, "url": handle.url, "name": handle.name || 'default' }).end();
+        } catch (e) {
+            console.error(e);
+            res.status(400).send({ "error": "Invalid request" }).end();
+        }
+    });
+})
+// 登出接口：清除会话 Cookie
+uiApp.post(manageUrl + '/logout', manageSecurityHeaders, function (req, res) {
+    let secureFlag = manageHttpsOptions ? '; Secure' : '';
+    res.setHeader('Set-Cookie', `${ADMIN_SESSION_COOKIE}=; HttpOnly; SameSite=Lax; Path=/; Max-Age=0${secureFlag}`);
+    res.send({ "success": true }).end();
+})
+// 会话查询：供管理面板展示当前登录的子配置
+uiApp.get(manageUrl + '/api/session', manageSecurityHeaders, function (req, res) {
+    let session = getAdminSession(req);
+    if (!session) {
+        res.send({ "loggedIn": false }).end();
+        return;
+    }
+    let idx = HANDLES.findIndex(h => h.url === session.m);
+    res.send({ "loggedIn": true, "url": session.m, "name": (idx >= 0 ? (HANDLES[idx].name || 'default') : session.m) }).end();
+})
+uiApp.get('/api/methods', manageSecurityHeaders, function (req, res) {
     let methods = HANDLES.map((handle, idx) => ({
         url: handle.url,
         name: handle.name || 'default'
@@ -911,6 +1267,7 @@ uiApp.get('/api/methods', function (req, res) {
 })
 // 如果启用了独立管理服务器，为其添加 favicon 和 404 处理
 if (manageApp) {
+    manageApp.use(manageSecurityHeaders);
     manageApp.get('/', function (req, res) {
         res.sendFile(__dirname + "/web/public/" + "index.html");
     })
@@ -925,9 +1282,8 @@ if (manageApp) {
     })
     manageApp.use((err, req, res, next) => {
         console.error(err.stack);
-        let errInfo = err.message;
-        res.type('text/plain');
-        res.status(500).send(JSON.stringify({ "code": 500, "msg": "Something went error.", "details": errInfo }));
+        res.type('application/json');
+        res.status(500).send({ "code": 500, "msg": "Internal server error" });
     });
 }
 app.get("/favicon.ico", function (req, res) { res.end() })
@@ -947,10 +1303,8 @@ app.post("*", function (req, res) {
 // HTML 处理结束
 app.use((err, req, res, next) => {
     console.error(err.stack);
-    let currentTime = new Date();
-    let errInfo = err.message;
-    res.type('text/plain');
-    res.status(500).send(JSON.stringify({ "code": 500, "msg": "Something went error.", "details": errInfo }));
+    res.type('application/json');
+    res.status(500).send({ "code": 500, "msg": "Internal server error" });
 });
 
 
@@ -958,8 +1312,9 @@ reloadConfig();
 server = app.listen(port);
 log(`Server is listening to ${port} port.`);
 if (manageApp) {
-    manageServer = manageApp.listen(managePort);
-    log(`Management server is listening to ${managePort} port.`);
+    initManageHttps();
+    listenManageServer();
+    log(`Management server is listening to ${managePort} port${manageHost ? " on " + manageHost : ""}${manageHttpsOptions ? " (HTTPS)" : ""}.`);
 }
 
 function reloadConfig() {
@@ -977,6 +1332,7 @@ function reloadConfig() {
     // log()
     port = globleConfig.get("port", 25600); // 8123
     managePort = globleConfig.get("manage_port", 0);
+    manageHost = globleConfig.get("manage_host", "127.0.0.1");
     if (server == null) return;
     // console.log(port)
     server.listen(port);            // 在端口运行它
@@ -987,8 +1343,9 @@ function reloadConfig() {
     // 重启管理服务器（如已启用）
     if (manageServer != null && managePort > 0) {
         manageServer.close();
-        manageServer.listen(managePort);
-        log(`Management server is listening to ${managePort} port.`);
+        initManageHttps();
+        listenManageServer();
+        log(`Management server is listening to ${managePort} port${manageHost ? " on " + manageHost : ""}${manageHttpsOptions ? " (HTTPS)" : ""}.`);
     }
     loginCooldownTime = globleConfig.get("login_cooldown", 5000);
     // Node使用'on'方法注册事件处理程序
