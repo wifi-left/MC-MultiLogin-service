@@ -17,14 +17,39 @@
 
 1. 下载 Node.JS（版本至少为`v21.0.0`）并且安装。
 2. 下载本项目，并解压。
-3. 按照下方的详解修改配置文件。
-4. 进入项目目录，运行：
+3. 按照下方的详解修改配置文件（`config/config.json`）。
+4. **一键启动**（推荐）：
+   - Windows：双击 `start.bat`
+   - Linux / macOS：`./start.sh`
+   
+   脚本会自动完成依赖安装（首次）并启动服务。
+   
+   也可以手动启动：
 
 ```bash
 npm install
+npm run server
 ```
 
-安装成功后，使用 `npm run server` 或者 `node index.js` 启动web服务。
+## 目录结构
+
+```
+├── src/                 # 服务端代码
+│   ├── index.js         # 入口（登录 API + 管理 API + 管理面板）
+│   ├── playercache.js   # 玩家缓存数据层
+│   ├── utils.js         # 日志 / 全局配置
+│   └── config_control.js# 配置文件加载器
+├── config/              # 配置文件
+│   ├── config.json      # 实际配置（含密钥，不提交到仓库）
+│   └── config_example.json  # 配置示例
+├── web/public/          # 管理面板页面（manage.html / login.html）
+├── cache/               # 玩家缓存（运行时数据，按子配置分目录）
+├── logs/                # 运行日志（运行时数据）
+├── start.bat            # Windows 一键启动
+└── start.sh             # Linux / macOS 一键启动
+```
+
+> 旧版本升级：若根目录下存在旧的 `config.json`，首次启动会自动复制迁移到 `config/config.json`（并输出 `[CONFIG] Migrated` 日志）。之后请以 `config/config.json` 为准。
 
 ## 配套模组/插件
 我们建议使用。它们可以为玩家提供更详细的错误信息而不是最简单的“无法验证用户名”。
@@ -33,8 +58,8 @@ npm install
 
 ## 配置详解
 
-请按照示例修改 `config.json`。示例在 [config_example.json](./config_example.json)
-> 旧版本中错误的JSON文件在启动时会被清空，您可以通过更新最新的提交来解决这个问题。建议您另外备份一份配置文件，避免出现不可挽回的损失。
+请按照示例修改 `config/config.json`。示例在 [config/config_example.json](./config/config_example.json)
+> 旧版本中错误的JSON文件在启动时会被清空，您可以通过更新最新的提交来解决这个问题。建议您另外备份一份配置文件，避免出现不可挽回的损失。旧版本（根目录 `config.json`）升级到新版本（`config/config.json`）时会自动迁移一次配置。
 
 ### 详细解释
 
@@ -191,7 +216,7 @@ GET /sessionserver/session/minecraft/hasJoined?username=Steve&serverId=xxx&detai
 
 ### errorMessages 子配置
 
-可在 `config.json` 中添加 `errorMessages` 字段，自定义 `detail=true` 时返回的错误文本。未配置的字段会使用默认中文文本。
+可在 `config/config.json` 中添加 `errorMessages` 字段，自定义 `detail=true` 时返回的错误文本。未配置的字段会使用默认中文文本。
 
 支持以下占位符：
 - `{from}` — 冲突来源皮肤站 ID

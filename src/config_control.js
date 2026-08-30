@@ -37,7 +37,7 @@ function ConfigControl(filename) {
     }
     this.save = function () {
         try {
-            fs.writeFileSync("./config/" + filename, JSON.stringify(this.config));
+            fs.writeFileSync(filename, JSON.stringify(this.config));
         } catch (e) {
             // config = {}
             return false;

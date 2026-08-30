@@ -13,6 +13,11 @@ var port = 0;
 var server = null;
 var DefaultSKINSITE = "original";
 
+// 项目根目录（src/ 的上一级），所有运行时路径以根目录为锚，与启动目录无关
+const ROOT_DIR = path.join(__dirname, '..');
+const CACHE_DIR = path.join(ROOT_DIR, 'cache');
+const WEB_PUBLIC_DIR = path.join(ROOT_DIR, 'web', 'public');
+
 const Fetch = fetch;
 // 上游验证请求带超时（fetch_timeout，默认 10s），防止上游挂起导致登录请求永久阻塞、
 // 以及 pending_players 标志泄漏造成该玩家被永久"登录过快"拦截
@@ -64,8 +69,8 @@ function initManageHttps() {
     }
     try {
         manageHttpsOptions = {
-            cert: fs.readFileSync(path.join(__dirname, cert)),
-            key: fs.readFileSync(path.join(__dirname, key))
+            cert: fs.readFileSync(path.join(ROOT_DIR, cert)),
+            key: fs.readFileSync(path.join(ROOT_DIR, key))
         };
     } catch (e) {
         manageHttpsOptions = null;
@@ -230,7 +235,7 @@ for (let i = 0; i < HANDLES.length; i++) {
     let url = HANDLES[i].url;
     let idx = i + 0;
     let methodName = HANDLES[i].name || "default";
-    let cachePath = `./cache/${methodName}`;
+    let cachePath = path.join(CACHE_DIR, methodName);
     PlayerCaches[idx] = new class_PlayerCache(cachePath);
     console.log("Register url path: " + url + " with cache: " + cachePath);
     app.get(url, function (req, res) { urlHandle_root(req, res, idx) });
@@ -1191,7 +1196,7 @@ function urlHandle_manage_batch_unban(req, res, from) {
 
 
 app.get('/', function (req, res) {
-    res.sendFile(__dirname + "/web/public/" + "index.html");
+    res.sendFile(path.join(WEB_PUBLIC_DIR, 'index.html'));
 })
 // 管理界面和管理API注册到 manageApp（独立管理服务器）或 app（主服务器）
 let uiApp = manageApp || app;
@@ -1202,10 +1207,10 @@ uiApp.get(manageUrl, manageSecurityHeaders, function (req, res) {
     res.setHeader('Content-Security-Policy', MANAGE_CSP);
     let session = getAdminSession(req);
     if (!session) {
-        res.sendFile(__dirname + "/web/public/" + "login.html");
+        res.sendFile(path.join(WEB_PUBLIC_DIR, 'login.html'));
         return;
     }
-    res.sendFile(__dirname + "/web/public/" + "manage.html");
+    res.sendFile(path.join(WEB_PUBLIC_DIR, 'manage.html'));
 })
 // 登录接口：校验子配置 URL + 密钥，通过后下发 httpOnly 会话 Cookie
 uiApp.post(manageUrl + '/login', manageSecurityHeaders, manageLimiter, function (req, res) {
@@ -1269,16 +1274,16 @@ uiApp.get('/api/methods', manageSecurityHeaders, function (req, res) {
 if (manageApp) {
     manageApp.use(manageSecurityHeaders);
     manageApp.get('/', function (req, res) {
-        res.sendFile(__dirname + "/web/public/" + "index.html");
+        res.sendFile(path.join(WEB_PUBLIC_DIR, 'index.html'));
     })
     manageApp.get("/favicon.ico", function (req, res) { res.end() })
     manageApp.get('*', function (req, res) {
         log("[UNKNOWN] " + (req.ip) + " -> " + req.url);
-        res.sendFile(__dirname + '/web/public/404.html');
+        res.sendFile(path.join(WEB_PUBLIC_DIR, '404.html'));
     });
     manageApp.post("*", function (req, res) {
         log("[UNKNOWN] " + (req.ip) + " -> " + req.url);
-        res.sendFile(__dirname + '/web/public/404.html');
+        res.sendFile(path.join(WEB_PUBLIC_DIR, '404.html'));
     })
     manageApp.use((err, req, res, next) => {
         console.error(err.stack);
@@ -1292,12 +1297,12 @@ app.get('*', function (req, res) {
     // log('404 handler..')
     // log(req.url);
     log("[UNKNOWN] " + (req.ip) + " -> " + req.url);
-    res.sendFile(__dirname + '/web/public/404.html');
+    res.sendFile(path.join(WEB_PUBLIC_DIR, '404.html'));
 });
 
 app.post("*", function (req, res) {
     log("[UNKNOWN] " + (req.ip) + " -> " + req.url);
-    res.sendFile(__dirname + '/web/public/404.html');
+    res.sendFile(path.join(WEB_PUBLIC_DIR, '404.html'));
 })
 
 // HTML 处理结束

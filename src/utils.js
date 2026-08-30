@@ -1,20 +1,41 @@
 const ConfigControl = require("./config_control.js").ConfigControl;
 const fs = require('fs');
 const path = require('path');
-const LOG_FILE_NAME = "./logs/latest.log";
-if (!fs.existsSync("./logs")) {
-    fs.mkdirSync("./logs");
+
+// 项目根目录（src/ 的上一级），所有运行时路径以根目录为锚，与启动目录无关
+const ROOT_DIR = path.join(__dirname, '..');
+const LOGS_DIR = path.join(ROOT_DIR, 'logs');
+const LOG_FILE_NAME = path.join(LOGS_DIR, 'latest.log');
+const CONFIG_DIR = path.join(ROOT_DIR, 'config');
+const CONFIG_FILE = path.join(CONFIG_DIR, 'config.json');
+const LEGACY_CONFIG_FILE = path.join(ROOT_DIR, 'config.json');
+
+if (!fs.existsSync(LOGS_DIR)) {
+    fs.mkdirSync(LOGS_DIR);
 }
-const globleConfig = new ConfigControl("config.json");
+// 旧版本配置迁移：根目录 config.json → config/config.json（仅当新位置不存在时复制一次）
+if (!fs.existsSync(CONFIG_FILE) && fs.existsSync(LEGACY_CONFIG_FILE)) {
+    try {
+        fs.mkdirSync(CONFIG_DIR, { recursive: true });
+        fs.copyFileSync(LEGACY_CONFIG_FILE, CONFIG_FILE);
+        console.log("[CONFIG] Migrated legacy ./config.json to config/config.json");
+    } catch (e) {
+        console.error("[CONFIG] Failed to migrate config: " + e.message);
+    }
+}
+if (!fs.existsSync(CONFIG_DIR)) {
+    fs.mkdirSync(CONFIG_DIR, { recursive: true });
+}
+const globleConfig = new ConfigControl(CONFIG_FILE);
 const logNums = parseInt(globleConfig.get("log_remaining_number", 5))
 var log_file_stream = null;
 
 try {
     if (logNums > 0 && !isNaN(logNums)) {
-        var folders = fs.readdirSync("./logs");
+        var folders = fs.readdirSync(LOGS_DIR);
         let deleteCount = 0;
         while ((folders.length - deleteCount) > logNums && (folders.length - deleteCount) > 0) {
-            let pathName = "./logs/" + folders[deleteCount];
+            let pathName = path.join(LOGS_DIR, folders[deleteCount]);
             let stat = fs.lstatSync(pathName);
             if (stat.isFile(pathName)) {
                 if (path.extname(pathName) == ".log"){
@@ -32,7 +53,7 @@ try {
             let hour = date.getHours().toString().padStart(2, "0");
             let minute = date.getMinutes().toString().padStart(2, "0");
             let second = date.getSeconds().toString().padStart(2, "0");
-            fs.renameSync(LOG_FILE_NAME, `logs/${year}-${month}-${day}_${hour}-${minute}-${second}.log`);
+            fs.renameSync(LOG_FILE_NAME, path.join(LOGS_DIR, `${year}-${month}-${day}_${hour}-${minute}-${second}.log`));
         }
         log_file_stream = fs.createWriteStream(LOG_FILE_NAME, {
             flags: 'w', // 写流不能用r，会报错.可以用'a'表示追加
