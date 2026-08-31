@@ -2263,9 +2263,25 @@
 
         async function initPanel() {
             await loadMethodConfigs();
+            if (!state.methodConfigs.length) {
+                // /api/methods 加载失败（服务器异常）：稍后重试一次，避免因瞬时故障误登出
+                await new Promise(r => setTimeout(r, 800));
+                await loadMethodConfigs();
+            }
+            const creds = getCreds();
+            if (!creds) {
+                // 会话 Cookie 有效但本地凭据缺失（如浏览器重启清空 sessionStorage）时，
+                // 直接跳转会因服务端仍返回管理页而形成无限刷新循环；
+                // 先调用登出清除 Cookie，再回登录页。
+                try { await fetch(PANEL_PATH + '/logout', { method: 'POST' }); } catch (e) { /* 忽略 */ }
+                location.href = PANEL_PATH;
+                return;
+            }
             const method = getSelectedMethod();
             if (!method) {
-                // 无会话凭据或子配置已变更：回登录页
+                // 凭据中的子配置已不在当前配置中：同样先退出再回登录页
+                try { await fetch(PANEL_PATH + '/logout', { method: 'POST' }); } catch (e) { /* 忽略 */ }
+                sessionStorage.removeItem(CREDS_KEY);
                 location.href = PANEL_PATH;
                 return;
             }
