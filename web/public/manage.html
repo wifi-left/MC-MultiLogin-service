@@ -1180,7 +1180,7 @@
             <div class="field">
                 <label for="addSecretKey">管理密钥</label>
                 <div class="input-wrap">
-                    <input type="password" id="addSecretKey" autocomplete="off" placeholder="输入该子配置的 secret">
+                    <input type="password" id="addSecretKey" autocomplete="new-password" placeholder="输入该子配置的 secret">
                     <button type="button" id="addSecretToggle" class="input-append" title="显示 / 隐藏密钥">👁</button>
                 </div>
             </div>
@@ -2142,10 +2142,20 @@
             }
         });
 
+        /* ==================== 防浏览器自动填充 ==================== */
+        // 普通输入框/选择框/文本域加 autocomplete="off"，密码框用 new-password，
+        // 避免浏览器把搜索框等普通字段误判为账号/密码框而自动填充
+        function disableBrowserAutofill() {
+            document.querySelectorAll('input, select, textarea').forEach(el => {
+                el.setAttribute('autocomplete', el.type === 'password' ? 'new-password' : 'off');
+            });
+        }
+
         /* ==================== 初始化 ==================== */
         initTheme();
         updateBanUI();
         updateBanTimeMode();
+        disableBrowserAutofill();
 
         $('logoutBtn').addEventListener('click', async () => {
             try {
