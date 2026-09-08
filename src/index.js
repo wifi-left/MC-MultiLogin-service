@@ -552,11 +552,16 @@ function urlHandle_profiles(req, res, from) {
     let handle = HANDLES[from];
     let url = req.url;
 
+    // 分离查询串(如 ?unsigned=false)：uuid1 与 url 都必须是干净路径段，
+    // 查询参数原样保留并在拼上游地址时追加，避免查询串污染路径段导致上游返回 400
+    let query = "";
+    let qIndex = url.indexOf("?");
+    if (qIndex != -1) {
+        query = url.substring(qIndex);
+        url = url.substring(0, qIndex);
+    }
     url = url.substring(url.lastIndexOf("/") + 1)
     let uuid1 = url;
-    if (uuid1.endsWith("?unsigned=false")) {
-        uuid1 = uuid1.substring(0, uuid1.length - "?unsigned=false".length);
-    }
     let profile_name = null;
     if (req.url.indexOf("/name/") != -1) {
         profile_name = url;
@@ -590,18 +595,18 @@ function urlHandle_profiles(req, res, from) {
         // return;
         api = lookupApi(DefaultSKINSITE);
         if (api == null) {
-            res.send({
+            res.status(200).send({
                 "error": "ForbiddenOperationException",
                 "errorMessage": "这位玩家可能还没有登录过服务器",
                 "cause": ""
-            }).status(204).end();
+            }).end();
             return;
         }
     }
     if (profile_name == null) {
         log("[PROFILE] Looking up for " + url + " from <Original>");
         {
-            fetchWithTimeout("https://sessionserver.mojang.com/session/minecraft/profile/" + encodeURIComponent(url)).then(data => {
+            fetchWithTimeout("https://sessionserver.mojang.com/session/minecraft/profile/" + encodeURIComponent(url) + query).then(data => {
                 res.status(data.status);
                 return data.text()
             }).then(data => {
@@ -615,21 +620,46 @@ function urlHandle_profiles(req, res, from) {
     } else {
         if (url == null) {
             log("[PROFILE] Looking up for " + profile_name + " from <" + api.name + ">");
-            fetchWithTimeout("https://api.minecraftservices.com/minecraft/profile/lookup/name/" + encodeURIComponent(profile_name)).then(data => {
-                res.status(data.status);
-                return data.text()
-            }).then(data => {
-                res.send(data).end();
-            }).catch(e => {
-                console.error(e);
-                res.status(204).end();
-            })
+            if (api.id == 'original') {
+                fetchWithTimeout("https://api.minecraftservices.com/minecraft/profile/lookup/name/" + encodeURIComponent(profile_name)).then(data => {
+                    res.status(data.status);
+                    return data.text()
+                }).then(data => {
+                    res.send(data).end();
+                }).catch(e => {
+                    console.error(e);
+                    res.status(204).end();
+                })
+            } else {
+                // yggdrasil 站点按名字取 profile：POST /api/profiles/minecraft，命中则回传数组首个元素
+                fetchWithTimeout(api.root + "/api/profiles/minecraft", {
+                    body: JSON.stringify([profile_name]),
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json'
+                    }
+                }).then(data => {
+                    res.status(data.status);
+                    return data.text()
+                }).then(dat => {
+                    let arr = null;
+                    try { arr = JSON.parse(dat); } catch (e) { }
+                    if (Array.isArray(arr) && arr.length > 0) {
+                        res.send(JSON.stringify(arr[0])).end();
+                    } else {
+                        res.status(204).end();
+                    }
+                }).catch(e => {
+                    console.error(e);
+                    res.status(204).end();
+                })
+            }
             return;
         }
         log("[PROFILE] Looking up for " + profile_name + "(" + url + ") from <" + api.name + ">");
 
         if (api.id == 'original') {
-            fetchWithTimeout("https://sessionserver.mojang.com/session/minecraft/profile/" + encodeURIComponent(url)).then(data => {
+            fetchWithTimeout("https://sessionserver.mojang.com/session/minecraft/profile/" + encodeURIComponent(url) + query).then(data => {
                 res.status(data.status);
                 return data.text()
             }).then(data => {
@@ -640,7 +670,7 @@ function urlHandle_profiles(req, res, from) {
             })
 
         } else {
-            fetchWithTimeout(api.root + "/sessionserver/session/minecraft/profile/" + encodeURIComponent(url)).then(data => {
+            fetchWithTimeout(api.root + "/sessionserver/session/minecraft/profile/" + encodeURIComponent(url) + query).then(data => {
                 res.status(data.status);
                 return data.text()
             }
@@ -686,11 +716,11 @@ function urlHandle_profiles_post(req, res, from) {
                     log("[PROFILE][POST] Looking up <" + bdy[i] + "> but not found.")
                     api = lookupApi(DefaultSKINSITE);
                     if (api == null) {
-                        res.send({
+                        res.status(200).send({
                             "error": "ForbiddenOperationException",
                             "errorMessage": "这位玩家可能还没有登录过服务器",
                             "cause": ""
-                        }).status(204).end();
+                        }).end();
                         return;
                     }
 
