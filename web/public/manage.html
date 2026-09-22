@@ -8,6 +8,8 @@
     <style>
         /* ============ 主题变量 ============ */
         :root {
+            /* 让原生控件（下拉弹出列表、滚动条等）也使用浅色绘制 */
+            color-scheme: light;
             --bg: #f3f5f9;
             --bg-card: #ffffff;
             --bg-soft: #f0f2f7;
@@ -32,6 +34,8 @@
             --radius: 10px;
         }
         [data-theme="dark"] {
+            /* 深色主题下原生控件也走深色绘制，避免下拉展开成白底白字 */
+            color-scheme: dark;
             --bg: #0f1218;
             --bg-card: #191e27;
             --bg-soft: #222836;
@@ -683,6 +687,262 @@
             border-radius: 6px;
         }
 
+        /* ============ 角色信息（皮肤 / 披风 / 曾用名） ============ */
+        .info-layout {
+            display: grid;
+            grid-template-columns: 1fr;
+            gap: 16px;
+            align-items: start;
+        }
+        @media (min-width: 900px) {
+            .info-layout {
+                grid-template-columns: minmax(0, 1fr) 300px;
+            }
+        }
+        .skin-panel {
+            border: 1px solid var(--border);
+            border-radius: 10px;
+            padding: 14px;
+            background: var(--bg-card);
+        }
+        .skin-preview {
+            display: flex;
+            align-items: flex-start;
+            justify-content: center;
+            gap: 18px;
+            flex-wrap: wrap;
+            background: var(--bg-soft);
+            border-radius: 8px;
+            padding: 14px 10px;
+            min-height: 120px;
+        }
+        .skin-img {
+            image-rendering: pixelated;
+            width: 108px;
+            height: 216px;
+            object-fit: contain;
+            object-position: top center;
+            display: block;
+        }
+        .cape-img {
+            image-rendering: pixelated;
+            width: 84px;
+            height: 156px;
+            object-fit: contain;
+            object-position: top center;
+            display: block;
+        }
+        .wearable {
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            gap: 6px;
+            max-width: 200px;
+        }
+        .wearable-name {
+            font-size: 12px;
+            color: var(--text-2);
+        }
+        .texture-url {
+            display: flex;
+            align-items: center;
+            gap: 8px;
+            font-size: 11px;
+            color: var(--text-2);
+            max-width: 100%;
+        }
+        .texture-url a {
+            word-break: break-all;
+            color: var(--accent, #4a8cff);
+            max-width: 120px;
+            overflow: hidden;
+            text-overflow: ellipsis;
+            white-space: nowrap;
+        }
+        .alias-list {
+            list-style: none;
+            margin: 0;
+            padding: 0;
+        }
+        .alias-list li {
+            display: flex;
+            align-items: center;
+            gap: 10px;
+            padding: 8px 10px;
+            border: 1px solid var(--border);
+            border-radius: 8px;
+            margin-bottom: 6px;
+            font-size: 13px;
+            flex-wrap: wrap;
+        }
+        .alias-list li.alias-hit {
+            border-color: var(--accent, #4a8cff);
+            background: rgba(74, 140, 255, 0.10);
+        }
+        .alias-list li.alias-current {
+            font-weight: 600;
+        }
+        .alias-name {
+            font-family: var(--mono, monospace);
+        }
+        .alias-note {
+            color: var(--text-2);
+            font-size: 12px;
+        }
+
+        /* 更名流程图：按时间顺序展示 旧名 → … → 当前名 */
+        .name-flow {
+            display: flex;
+            align-items: center;
+            flex-wrap: wrap;
+            gap: 8px;
+            padding: 10px 12px;
+            border: 1px solid var(--border);
+            border-radius: 8px;
+            margin: 8px 0;
+            background: var(--bg-soft);
+        }
+        .flow-node {
+            display: inline-flex;
+            align-items: center;
+            gap: 6px;
+            padding: 4px 10px;
+            border-radius: 999px;
+            border: 1px solid var(--border);
+            background: var(--bg-card);
+            font-family: var(--mono, monospace);
+            font-size: 12px;
+            white-space: nowrap;
+        }
+        .flow-node.flow-oldest {
+            border-style: dashed;
+            background: var(--bg-card);
+            color: var(--text-2);
+        }
+        .flow-node.flow-current {
+            border-color: var(--accent, #4a8cff);
+            font-weight: 600;
+        }
+        .flow-node.flow-hit {
+            border-color: var(--accent, #4a8cff);
+            background: rgba(74, 140, 255, 0.12);
+        }
+        .flow-arrow {
+            color: var(--text-2);
+            font-size: 12px;
+        }
+        .flow-tag {
+            font-size: 10px;
+            color: var(--text-2);
+        }
+        .skin-warn {
+            font-size: 12px;
+            color: var(--text-2);
+            margin-top: 8px;
+            line-height: 1.6;
+        }
+
+        /* ============ 皮肤 / 披风 3D 预览（three.js + skinview3d，本地打包） ============ */
+        .viewer-row {
+            display: flex;
+            flex-wrap: wrap;
+            gap: 16px;
+            align-items: flex-start;
+            justify-content: center;
+        }
+        .viewer {
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            gap: 8px;
+        }
+        .viewer-title {
+            font-size: 12px;
+            color: var(--text-2);
+        }
+        .viewer-bar {
+            display: flex;
+            gap: 6px;
+            flex-wrap: wrap;
+            justify-content: center;
+        }
+        .viewer-select {
+            padding: 3px 6px;
+            font-size: 12px;
+            border-radius: 6px;
+            border: 1px solid var(--border);
+            background: var(--bg-card);
+            color: var(--text);
+        }
+        /* 原生下拉的弹出列表由系统绘制，不继承 select 的颜色：显式给 option 配色，
+           并用 color-scheme 让浏览器用深色原生控件（否则展开时是白底白字） */
+        .viewer-select option {
+            background-color: var(--bg-card);
+            color: var(--text);
+        }
+        .viewer-select,
+        .viewer-select option {
+            color-scheme: light;
+        }
+        [data-theme="dark"] .viewer-select,
+        [data-theme="dark"] .viewer-select option {
+            color-scheme: dark;
+        }
+        /* 顺带统一其它下拉（来源选择等）的弹出列表配色 */
+        select option {
+            background-color: var(--bg-card);
+            color: var(--text);
+        }
+        .mc-scene {
+            position: relative;
+            background: var(--bg-soft);
+            border-radius: 10px;
+            overflow: hidden;
+        }
+        .mc-scene.skin-scene {
+            width: 220px;
+            height: 330px;
+        }
+        .mc-scene.cape-scene {
+            width: 160px;
+            height: 260px;
+        }
+        .mc-canvas {
+            display: block;
+            width: 100%;
+            height: 100%;
+        }
+        .viewer-loading {
+            position: absolute;
+            left: 0;
+            top: 0;
+            right: 0;
+            bottom: 0;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-size: 12px;
+            color: var(--text-2);
+        }
+        .viewer-hint {
+            font-size: 11px;
+            color: var(--text-2);
+        }
+        .flat-wrap {
+            display: flex;
+            gap: 16px;
+            align-items: flex-start;
+            justify-content: center;
+            flex-wrap: wrap;
+            background: var(--bg-soft);
+            border-radius: 8px;
+            padding: 12px 10px;
+            margin-top: 8px;
+        }
+        .flat-wrap.hidden {
+            display: none;
+        }
+
         /* ============ 弹窗 ============ */
         .modal-overlay {
             position: fixed;
@@ -914,7 +1174,9 @@
         <nav class="tabs" role="tablist">
             <button class="tab active" data-tab="dashboard">📊 概览</button>
             <button class="tab" data-tab="players">👥 玩家列表</button>
-            <button class="tab" data-tab="query">🔍 查询玩家</button>
+            <button class="tab" data-tab="query">🔍 缓存查询</button>
+            <button class="tab" data-tab="remote">🌐 远程信息</button>
+            <button class="tab" data-tab="alias">🕓 曾用名追踪</button>
             <button class="tab" data-tab="ban">🚫 封禁管理</button>
             <button class="tab" data-tab="modify">✏️ 缓存修改</button>
         </nav>
@@ -939,7 +1201,7 @@
                         <button class="btn" data-goto="query">🔍 查询玩家</button>
                         <button class="btn" data-goto="ban">🚫 封禁管理</button>
                         <button class="btn secondary" id="dashExport">⬇ 导出UUID映射</button>
-                        <button class="btn danger outline" id="dashRebuildUuid">♻ 重构UUID表</button>
+                        <button class="btn danger outline" id="dashRebuildUuid">🩺 检查/修复UUID表</button>
                     </div>
                     <p class="hint">自动加载玩家与封禁数据用于统计，登录后随页面加载自动刷新。</p>
                 </div>
@@ -968,12 +1230,13 @@
                             <option value="name">名称</option>
                             <option value="uuid">UUID</option>
                             <option value="from">来源</option>
+                            <option value="oldname">曾用名</option>
                         </select>
                     </div>
                     <span class="spacer"></span>
                     <button class="btn secondary" id="playerExportUuid">⬇ UUID映射</button>
                     <button class="btn secondary" id="playerExportCsv">⬇ 导出CSV</button>
-                    <button class="btn danger outline" id="playerRebuildUuid">♻ 重构UUID表</button>
+                    <button class="btn danger outline" id="playerRebuildUuid">🩺 检查/修复UUID表</button>
                     <button class="btn danger" id="playerBatchDelete" disabled>🗑 批量删除</button>
                 </div>
                 <div class="table-wrap">
@@ -1017,23 +1280,68 @@
         <!-- ============ 查询玩家 ============ -->
         <section id="tab-query" class="tab-content">
             <div class="card">
+                <h3>本地缓存查询 <span class="spacer"></span><span class="alias-note">只读本地档案，不访问任何上游</span></h3>
                 <form id="queryForm">
                     <div class="form-row">
                         <div class="field">
-                            <label for="queryPlayerName">玩家名称</label>
-                            <input type="text" id="queryPlayerName" placeholder="输入玩家名称">
+                            <label for="queryPlayerName">玩家名称 / UUID</label>
+                            <input type="text" id="queryPlayerName" placeholder="输入玩家名称，或 32 位 UUID（可带横线）">
                         </div>
-                        <button class="btn" type="submit">查询</button>
+                        <button class="btn" type="submit">查询缓存</button>
+                        <button class="btn secondary" type="button" id="queryToRemote">🌐 查询远程信息</button>
                         <button class="btn secondary" type="button" id="queryToModify" disabled>跳转到修改界面</button>
                     </div>
                 </form>
                 <div class="result-box" id="queryResult"></div>
-                <h3>解析结果</h3>
+                <h3>解析结果（本地缓存）</h3>
                 <div id="queryParsedWrap" class="empty">查询后在此显示解析结果</div>
                 <details class="raw-json">
                     <summary>查看原始返回 JSON</summary>
                     <pre id="queryData"></pre>
                 </details>
+            </div>
+        </section>
+
+        <!-- ============ 远程信息（手动触发） ============ -->
+        <section id="tab-remote" class="tab-content">
+            <div class="card">
+                <h3>角色远程信息 <span class="spacer"></span><span class="alias-note">向配置的来源查询真实档案（含皮肤 / 披风 3D 预览）</span></h3>
+                <form id="remoteForm">
+                    <div class="form-row">
+                        <div class="field">
+                            <label for="remotePlayerName">玩家名称 / UUID</label>
+                            <input type="text" id="remotePlayerName" placeholder="输入玩家名称，或 32 位 UUID（可带横线）">
+                        </div>
+                        <div class="field">
+                            <label for="remoteSource">查询来源</label>
+                            <select id="remoteSource">
+                                <option value="">自动（缓存 → 子配置顺序）</option>
+                            </select>
+                        </div>
+                        <button class="btn" type="submit">查询远程信息</button>
+                    </div>
+                </form>
+                <p class="hint">本页不会自动发起远程查询：只有点击按钮才会向上游皮肤站 / 官方接口请求数据。</p>
+                <div class="result-box" id="remoteResult"></div>
+                <div id="queryInfoWrap" class="empty">输入名称并点击"查询远程信息"后在此显示角色档案</div>
+            </div>
+        </section>
+
+        <!-- ============ 曾用名追踪 ============ -->
+        <section id="tab-alias" class="tab-content">
+            <div class="card">
+                <h3>曾用名追踪 <span class="spacer"></span><span class="alias-note">按历史用户名反查档案，命中项高亮</span></h3>
+                <form id="aliasForm">
+                    <div class="form-row">
+                        <div class="field">
+                            <label for="aliasName">历史用户名</label>
+                            <input type="text" id="aliasName" placeholder="输入名称查询历史">
+                        </div>
+                        <button class="btn" type="submit">反查</button>
+                    </div>
+                </form>
+                <div class="result-box" id="aliasResult"></div>
+                <div id="aliasWrap" class="empty">输入曾用名后在此显示命中的档案</div>
             </div>
         </section>
 
@@ -1195,6 +1503,9 @@
 
     <div id="toastWrap" class="toast-wrap"></div>
 
+    <!-- 3D 皮肤/披风预览（three.js + skinview3d，本地打包，见 vendor/build.mjs） -->
+    <script src="vendor/mcviewer.js" defer></script>
+
     <script>
         'use strict';
 
@@ -1343,6 +1654,7 @@
             pSelection: new Set(),
             bSearch: '', bSelection: new Set(),
             queryData: null, queryName: '',
+            sourceConfig: { all: [], handles: {} },
             connected: false,
         };
         let currentTab = 'dashboard';
@@ -1362,10 +1674,7 @@
             if (!creds) return null;
             return state.methodConfigs.find(m => m.url === creds.url) || null;
         }
-        function getSecretValue() {
-            const c = getCreds();
-            return c ? (c.secret || '') : '';
-        }
+        // 本地保存的密钥只用于登录 / 切换账号（见下方 login POST），管理接口不再携带它
         function loadAccounts() {
             try { return JSON.parse(localStorage.getItem(ACCOUNTS_KEY) || '[]'); } catch (e) { return []; }
         }
@@ -1385,25 +1694,68 @@
                 const resp = await fetch('/api/methods');
                 if (!resp.ok) throw new Error('HTTP ' + resp.status);
                 state.methodConfigs = await resp.json();
+                await loadSources();
             } catch (e) {
                 console.error('Failed to load method configs:', e);
                 toast('无法加载子配置列表: ' + e.message, 'error');
             }
         }
 
+        // 来源（皮肤站）列表：按当前子配置过滤，用于"角色信息查询"的来源下拉
+        async function loadSources() {
+            try {
+                const resp = await fetch('/api/sources');
+                if (!resp.ok) throw new Error('HTTP ' + resp.status);
+                state.sourceConfig = await resp.json();
+            } catch (e) {
+                console.error('Failed to load sources:', e);
+                state.sourceConfig = { all: [], handles: {} };
+            }
+            populateSourceSelect();
+        }
+
+        function populateSourceSelect() {
+            const sel = $('remoteSource');
+            if (!sel) return;
+            const method = getSelectedMethod();
+            const cfg = state.sourceConfig || {};
+            const perHandle = method && cfg.handles ? cfg.handles[method.url] : null;
+            const list = (perHandle && perHandle.sources) ? perHandle.sources : (cfg.all || []);
+            const prev = sel.value;
+            sel.innerHTML = '';
+            sel.appendChild(h('option', { value: '', text: '自动（缓存 → 子配置顺序）' }));
+            list.forEach(s => {
+                sel.appendChild(h('option', { value: s.id, text: `${s.name}（${s.id}）` }));
+            });
+            if (prev && list.some(s => s.id === prev)) sel.value = prev;
+        }
+
         /* ==================== API 与连接 ==================== */
+        // 管理接口统一用登录会话（httpOnly Cookie）鉴权，请求体里不携带 secret：
+        // 密钥只在登录/切换账号时使用（封禁也走 /manage/ban，不再调用对外的 /ban/* 接口）。
         async function manageFetch(path, body) {
             const method = getSelectedMethod();
             if (!method) throw new Error('未登录或会话已失效');
-            const secret = getSecretValue();
-            if (!secret) throw new Error('登录凭据缺失，请重新登录');
             const resp = await fetch(method.url + path, {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify(Object.assign({ secret }, body || {}))
+                credentials: 'same-origin',
+                body: JSON.stringify(body || {})
             });
             let data = null;
             try { data = await resp.json(); } catch (e) { /* 非 JSON 响应 */ }
+            if (resp.status === 401) {
+                // 会话过期 / 服务器重启：清除本地凭据并回登录页，避免面板停在"一直失败"的状态
+                sessionStorage.removeItem(CREDS_KEY);
+                toast('登录已失效，请重新登录', 'error');
+                setTimeout(() => { location.href = PANEL_PATH; }, 1200);
+                throw new Error('登录已失效，请重新登录');
+            }
+            if (resp.status === 403) {
+                // 权限 / 跨站校验被拒：不是会话问题，不要把用户踢回登录页，
+                // 直接把服务端给的原因显示出来（如"跨站请求被拒绝""子配置无权访问"）
+                throw new Error((data && data.error) || '服务器拒绝了该请求（403）');
+            }
             if (resp.status === 429) throw new Error('请求过于频繁，请稍后再试');
             if (!resp.ok) throw new Error((data && data.error) || ('请求失败 (' + resp.status + ')'));
             return data;
@@ -1442,6 +1794,8 @@
                 dashboard: loadDashboard,
                 players: loadPlayers,
                 query: () => { },
+                remote: () => { },
+                alias: () => { },
                 ban: loadBans,
                 modify: () => { },
             };
@@ -1760,32 +2114,72 @@
             }
         }
 
-        function rebuildUuid() {
-            confirmDialog({
-                title: '重构 UUID 表',
-                message: '确定要重构 UUID->玩家名 索引表吗？这会按当前缓存文件重新生成。',
-                confirmText: '重构',
+        // 索引体检：先报告幽灵条目 / 重复 uuid / 缺失映射，再按需一键修复
+        async function checkUuid(forceFix) {
+            let preview = null;
+            try {
+                preview = await manageFetch('/manage/check-uuid', { fix: false });
+            } catch (e) {
+                toast(e.message, 'error');
+                return;
+            }
+            const stale = preview.staleCount || 0;
+            const dup = preview.duplicateCount || 0;
+            const miss = preview.missingCount || 0;
+            if (stale + dup + miss === 0) {
+                toast(`UUID 表正常，当前索引项：${preview.entries}`, 'success');
+                return;
+            }
+            const lines = [
+                `发现问题：幽灵条目 ${stale} / 重复 uuid ${dup} / 缺失映射 ${miss}`,
+                '',
+                ...preview.stale.slice(0, 6).map(s => `幽灵 ${s.name}（${s.reason === 'missing_file' ? '档案不存在' : 'uuid 不匹配'}）`),
+                ...preview.duplicate.slice(0, 4).map(d => `重复 uuid ${d.uuid} → ${(d.names || []).join(' / ')}`),
+                ...preview.missing.slice(0, 4).map(m => `缺失 ${m.name} → ${m.uuid}`),
+                stale + dup + miss > 14 ? '……（完整清单见接口返回）' : ''
+            ].filter(Boolean);
+            if (forceFix) { await doFixUuid(lines.join('\n')); return; }
+            const ok = await confirmDialog({
+                title: '检查 / 修复 UUID 表',
+                message: lines.join('\n') + '\n\n是否立即修复？（会先备份 a.ud.json；重复 uuid 仅清空索引，需人工确认归属）',
+                confirmText: '修复',
                 danger: false
-            }).then(async ok => {
-                if (!ok) return;
-                try {
-                    const res = await manageFetch('/manage/rebuild-uuid');
-                    toast(`UUID 表重构完成，当前索引项：${res.count}`, 'success');
-                    if (currentTab === 'players') await loadPlayers(true);
-                } catch (e) {
-                    toast(e.message, 'error');
-                }
             });
+            if (ok) await doFixUuid(lines.join('\n'));
         }
-        $('playerRebuildUuid').addEventListener('click', rebuildUuid);
-        $('dashRebuildUuid').addEventListener('click', rebuildUuid);
+        async function doFixUuid(desc) {
+            try {
+                const res = await manageFetch('/manage/check-uuid', { fix: true });
+                toast(`已修复：清理幽灵条目 ${res.staleCount} 项，重指向 ${res.missingCount} 项，重复 uuid ${res.duplicateCount} 项已清空索引`, 'success');
+                logToCloud(desc);
+                if (currentTab === 'players') await loadPlayers(true);
+                if (currentTab === 'dashboard') await loadDashboard();
+            } catch (e) {
+                toast(e.message, 'error');
+            }
+        }
+        // 面板没有日志面板，仅把体检明细打到控制台便于排查
+        function logToCloud(desc) {
+            try { console.info('[UUID检查]\n' + desc); } catch (e) { }
+        }
+        $('playerRebuildUuid').addEventListener('click', () => checkUuid(false));
+        $('dashRebuildUuid').addEventListener('click', () => checkUuid(false));
 
         /* ==================== 查询玩家 ==================== */
         $('queryForm').addEventListener('submit', e => { e.preventDefault(); queryPlayer(); });
+        $('aliasForm').addEventListener('submit', e => { e.preventDefault(); queryAlias(); });
+        $('remoteForm').addEventListener('submit', e => { e.preventDefault(); queryRemote(); });
+        $('queryToRemote').addEventListener('click', () => gotoRemote($('queryPlayerName').value.trim()));
 
+        // 当前展示的角色信息（用于曾用名列表里标注"命中"）
+        let lastInfo = null;
+        let lastAlias = '';
+        let lastHitProfiles = [];
+
+        // 缓存查询：只读本地档案，绝不访问上游（远程查询在"远程信息"标签页手动触发）
         async function queryPlayer() {
             const name = $('queryPlayerName').value.trim();
-            if (!name) { showBox('queryResult', '请输入玩家名称', false); return; }
+            if (!name) { showBox('queryResult', '请输入玩家名称或 UUID', false); return; }
             hideBox('queryResult');
             try {
                 const res = await manageFetch(`/manage/query/${encodeURIComponent(name)}`);
@@ -1794,6 +2188,15 @@
                 $('queryData').textContent = JSON.stringify(res.data, null, 2);
                 renderParsed(res.data);
                 $('queryToModify').disabled = false;
+                // 顺带提示该名字是否也是别的账号的曾用名（同样只读本地缓存）
+                try {
+                    const alias = await manageFetch(`/manage/names/${encodeURIComponent(name)}`);
+                    lastAlias = name;
+                    lastHitProfiles = (alias.matches || []).map(m => m.name);
+                    if (lastHitProfiles.length > 0) {
+                        showBox('queryResult', `该名字也是 ${lastHitProfiles.join('、')} 的曾用名（详见"曾用名追踪"页）`, true);
+                    }
+                } catch (e) { /* 曾用名提示失败不影响主流程 */ }
             } catch (e) {
                 state.queryData = null;
                 state.queryName = '';
@@ -1801,6 +2204,488 @@
                 $('queryParsedWrap').innerHTML = '';
                 $('queryToModify').disabled = true;
                 showBox('queryResult', e.message, false);
+            }
+        }
+
+        // 跳到"远程信息"页并立即查询（远程访问必须由用户显式触发）
+        function gotoRemote(name) {
+            const tab = $$('.tab').find(b => b.dataset.tab === 'remote');
+            if (tab) tab.click();
+            if (name) $('remotePlayerName').value = name;
+            queryRemote();
+        }
+
+        // "缓存查询"页：跳到该页并查询本地缓存（不访问上游）
+        function gotoQuery(name) {
+            const tab = $$('.tab').find(b => b.dataset.tab === 'query');
+            if (tab) tab.click();
+            if (name) $('queryPlayerName').value = name;
+            queryPlayer();
+        }
+
+        // "曾用名追踪"页：跳到该页并反查
+        function gotoAlias(name) {
+            const tab = $$('.tab').find(b => b.dataset.tab === 'alias');
+            if (tab) tab.click();
+            if (name) $('aliasName').value = name;
+            queryAlias();
+        }
+
+        // 远程信息：手动触发，向来源查询真实档案 + 皮肤/披风 3D 预览
+        async function queryRemote() {
+            const name = $('remotePlayerName').value.trim();
+            if (!name) { showBox('remoteResult', '请输入玩家名称或 UUID', false); return; }
+            hideBox('remoteResult');
+            const wrap = $('queryInfoWrap');
+            disposeViewers();               // 上一批 3D 预览先释放，别让渲染循环与 WebGL 上下文留在已移除的 canvas 上
+            wrap.innerHTML = '';
+            wrap.classList.add('empty');
+            wrap.textContent = '正在从来源查询角色信息…';
+            $('queryToModify').disabled = true;
+            try {
+                const body = {};
+                const src = $('remoteSource').value;
+                if (src) body.from = src;
+                const info = await manageFetch(`/manage/player-info/${encodeURIComponent(name)}`, body);
+                renderQueryInfo(info, name);
+                // 本地有同名档案时，同步查询页的展示与"跳转修改"按钮
+                try {
+                    const local = await manageFetch(`/manage/query/${encodeURIComponent(name)}`);
+                    if (local && local.data) {
+                        state.queryData = local.data;
+                        state.queryName = name;
+                        $('queryToModify').disabled = false;
+                    }
+                } catch (e) { /* 本地没有档案属正常情况 */ }
+            } catch (e) {
+                lastInfo = null;
+                wrap.innerHTML = '';
+                wrap.classList.remove('empty');
+                wrap.appendChild(h('div', { class: 'skin-warn', text: '角色信息查询失败：' + e.message }));
+            }
+        }
+
+        // 玩家名比较：大小写不敏感（缓存文件名在 Windows 上也不区分大小写）
+        function normalizeName(name) {
+            return String(name == null ? '' : name).toLowerCase();
+        }
+        // 把 uuid / 名字统一成"显示用"短 UUID
+        function fmtUuid(uuid) {            if (!uuid) return '';
+            const s = String(uuid).replace(/-/g, '');
+            if (s.length !== 32) return String(uuid);
+            return s.slice(0, 8) + '-' + s.slice(8, 12) + '-' + s.slice(12, 16) + '-' + s.slice(16, 20) + '-' + s.slice(20);
+        }
+
+        function renderQueryInfo(info, query) {
+            lastInfo = info;
+            const wrap = $('queryInfoWrap');
+            disposeViewers();               // 预览句柄不随 innerHTML 一起回收，重建结果前必须显式释放
+            wrap.innerHTML = '';
+            wrap.classList.remove('empty');
+            if (!info || typeof info !== 'object') { wrap.classList.add('empty'); wrap.textContent = '无数据'; return; }
+
+            const skinUrl = Object.prototype.hasOwnProperty.call(info, 'skinUrl') ? info.skinUrl : (info.textures && info.textures.skin ? info.textures.skin.url : null);
+            const capeUrl = Object.prototype.hasOwnProperty.call(info, 'capeUrl') ? info.capeUrl : (info.textures && info.textures.cape ? info.textures.cape.url : null);
+            const skinModel = Object.prototype.hasOwnProperty.call(info, 'skinModel') ? info.skinModel : (info.textures && info.textures.skin ? info.textures.skin.model : null);
+
+            const cache = info.cache || null;
+            let banText = '否';
+            if (cache && cache.ban === true) {
+                const bt = Number(cache.banTime);
+                banText = (!Number.isFinite(bt) || bt === 0) ? '是（永久）' : (bt > Date.now() ? '是（至 ' + fmtTime(bt) + '）' : '否（已过期）');
+            }
+            const chainText = (info.lookupChain || []).map(c => (c.fromName || c.from) + (c.found ? ' ✓' : ' ✗')).join(' → ');
+            const displayName = info.name || query;
+
+            const rows = [
+                ['当前名称', displayName],
+                ['UUID', info.uuid ? fmtUuid(info.uuid) : ''],
+                ['解析来源', info.fromName || info.resolvedFrom || ''],
+                ['档案来源', info.profileFrom || (cache ? cache.from : '') || ''],
+                ['账号状态', info.online === false ? '来源未返回档案（不在线或不存在）' : '来源已返回真实档案'],
+                ['皮肤模型', skinModel === 'slim' ? 'slim（纤细）' : (skinModel === 'classic' ? 'classic（经典）' : '')],
+                ['披风', capeUrl ? '有' : '无'],
+                ['查询链', chainText],
+                ['曾用名', (info.history && info.history.old_names && info.history.old_names.length) ? info.history.old_names.join('、') : '无'],
+                ['档案最早名称', info.history && info.history.oldest ? info.history.oldest : ''],
+                ['最后登录', cache ? fmtTime(cache.lastLogin) : ''],
+                ['封禁状态', banText],
+                ['IP', cache && cache.ip != null ? cache.ip : '']
+            ];
+            const table = h('table', { class: 'parsed-table' });
+            const tbody = h('tbody');
+            rows.forEach(([k, v]) => {
+                tbody.appendChild(h('tr', null,
+                    h('th', { text: k }),
+                    h('td', null,
+                        h('span', { text: String(v == null ? '' : v) }),
+                        h('button', { class: 'btn secondary sm copy-btn', onclick: () => copyText(String(v == null ? '' : v)) }, '复制')
+                    )
+                ));
+            });
+            table.appendChild(tbody);
+            wrap.appendChild(table);
+            const proxySkin = info.textures && info.textures.skin ? (info.textures.skin.proxyUrl || null) : null;
+            const proxyCape = info.textures && info.textures.cape ? (info.textures.cape.proxyUrl || null) : null;
+            wrap.appendChild(renderSkinPanel(displayName, info.uuid, skinUrl, capeUrl, skinModel, info.preview3d === true, { skin: proxySkin, cape: proxyCape }));
+            // 只有"本次查询用的就是曾用名"时才高亮，避免和当前名自身的查询混淆
+            const aliasQuery = (!info.history || normalizeName(info.history.name) !== normalizeName(query)) ? query : '';
+            wrap.appendChild(renderAliasList(displayName, info.history, aliasQuery, aliasQuery ? lastHitProfiles : []));
+            const warns = [];
+            if (info.warnings && info.warnings.length) warns.push(...info.warnings);
+            if (info.error) warns.push('来源错误：' + info.error);
+            const imgSrcList = (info.allowedImgSrc || '').replace(/^img-src\s+/, '');
+            if (warns.length > 0) {
+                wrap.appendChild(h('div', { class: 'skin-warn', text: warns.join('；') }));
+            }
+            if (imgSrcList) {
+                wrap.appendChild(h('div', { class: 'skin-warn', text: '图片直连白名单（CSP img-src）：' + imgSrcList }));
+            }
+        }
+
+        /* ==================== 皮肤 / 披风 3D 预览 ====================
+         * three.js + skinview3d（与 LittleSkin / Blessing Skin 同一套方案）。脚本是本地构建的
+         * 自包含文件 web/public/vendor/mcviewer.js（= skinview3d 官方 UMD 包 + 适配层
+         * src/vendor/mcviewer.js，用 node vendor/build.mjs 生成），运行时不依赖 CDN。
+         * 贴图走服务端同源反代 {manage_url}/skin-proxy（配置 skin_proxy），WebGL 取贴图因此
+         * 不受跨站限制；关闭反代时 3D 预览整体停用，只显示平面贴图。
+         */
+        // 当前查询结果里存活的预览。整块重建 #queryInfoWrap 之前必须先释放：预览的渲染循环、
+        // ResizeObserver 与 WebGL 上下文都不随 DOM 回收，而浏览器的活动上下文数量有上限（约 16 个），
+        // 连续查几个玩家就会让最早的预览黑屏
+        let viewerDisposers = [];
+
+        function disposeViewers() {
+            viewerDisposers.forEach(dispose => dispose());
+            viewerDisposers = [];
+        }
+
+        function viewerButton(text, onClick) {
+            return h('button', { class: 'btn secondary sm', onclick: onClick }, text);
+        }
+
+        // 预览盒子尺寸与 .mc-scene 的 CSS 一致（脚本就绪后 mcviewer 会按实际布局重新测量）
+        const VIEWER_BOX = { skin: { width: 220, height: 330 }, cape: { width: 160, height: 260 } };
+        const ANIM_LABELS = { idle: '站立', walk: '行走', run: '奔跑', swim: '游泳', fly: '飞行', crouch: '下蹲', hit: '受击', none: '静止' };
+
+        // 一个 3D 预览：canvas + 视角工具栏（锁定 / 复位 / 旋转 / 动作）
+        function buildViewer(kind, textureUrl, model) {
+            const scene = h('div', { class: 'mc-scene ' + kind + '-scene' });
+            const canvas = h('canvas', { class: 'mc-canvas' });
+            scene.appendChild(canvas);
+            const bar = h('div', { class: 'viewer-bar' });
+            const box = h('div', { class: 'viewer' }, scene, bar);
+            const spinner = h('div', { class: 'viewer-loading', text: '正在加载 3D 预览…' });
+            scene.appendChild(spinner);
+
+            const state = { locked: false, spin: true, anim: 'idle' };
+            let viewer = null;
+            // 先登记释放动作：脚本还没就绪就被下一次查询重建时，也要能安全收尾
+            viewerDisposers.push(() => { if (viewer) { viewer.dispose(); viewer = null; } });
+
+            const lockBtn = viewerButton('🔒 锁定正面', () => {
+                state.locked = !state.locked;
+                lockBtn.textContent = state.locked ? '🔓 解锁视角' : '🔒 锁定正面';
+                if (viewer) viewer.setLocked(state.locked);
+            });
+            const resetBtn = viewerButton('↺ 复位视角', () => {
+                if (viewer) viewer.resetView();
+            });
+            const spinBtn = viewerButton('⏸ 暂停旋转', () => {
+                state.spin = !state.spin;
+                spinBtn.textContent = state.spin ? '⏸ 暂停旋转' : '▶ 自动旋转';
+                if (viewer) viewer.setSpin(state.spin);
+            });
+            bar.appendChild(lockBtn);
+            bar.appendChild(resetBtn);
+            bar.appendChild(spinBtn);
+            if (kind === 'skin') {
+                const animSel = h('select', { class: 'viewer-select' });
+                // 动作清单由 mcviewer 提供，避免两边各写一份
+                const anims = (window.MCViewer && window.MCViewer.animations) || ['idle', 'walk', 'run', 'none'];
+                anims.forEach(v => animSel.appendChild(h('option', { value: v, text: ANIM_LABELS[v] || v })));
+                animSel.value = state.anim;
+                animSel.addEventListener('change', () => {
+                    state.anim = animSel.value;
+                    if (viewer) viewer.setAnimation(state.anim);
+                });
+                bar.appendChild(animSel);
+            }
+
+            const fail = text => {
+                spinner.remove();
+                box.appendChild(h('div', { class: 'skin-warn', text: text }));
+            };
+
+            // 等待脚本就绪（vendor 脚本是 defer 加载的同源脚本，可能晚于本脚本执行）
+            const start = () => {
+                if (window.MCViewer.available === false) {
+                    fail('3D 预览脚本不完整：' + (window.MCViewer.errors[0] || 'skinview3d 未加载'));
+                    return;
+                }
+                viewer = window.MCViewer.create(canvas, {
+                    kind: kind,
+                    url: textureUrl,
+                    model: model,
+                    animation: state.anim,
+                    spin: state.spin,
+                    locked: state.locked,
+                    width: VIEWER_BOX[kind].width,
+                    height: VIEWER_BOX[kind].height
+                });
+                viewer.ready.then(() => {
+                    spinner.remove();
+                }).catch(e => {
+                    fail('3D 预览加载失败：' + (viewer.error || (e && e.message) || e) + '（下方平面原图仍可查看）');
+                });
+            };
+            if (window.MCViewer) {
+                start();
+            } else {
+                let tries = 0;
+                const wait = () => {
+                    if (window.MCViewer) { start(); return; }
+                    if (++tries > 40) {
+                        fail('3D 预览脚本未加载（vendor/mcviewer.js 缺失，请运行 node vendor/build.mjs 生成）');
+                        return;
+                    }
+                    setTimeout(wait, 150);
+                };
+                setTimeout(wait, 150);
+            }
+            return box;
+        }
+
+        // 皮肤 / 披风渲染：3D 预览（需反代）+ 平面原图 + 直链
+        function renderSkinPanel(name, uuid, skinUrl, capeUrl, model, preview3d, proxyUrls) {
+            const panel = h('div', { class: 'skin-panel' });
+            panel.appendChild(h('h3', { text: '皮肤与披风' }));
+            const row = h('div', { class: 'viewer-row' });
+            const urls = [];
+            // 3D 预览只有在"贴图反代启用"时才可用（WebGL 需要同源/允许跨站的贴图）
+            const viewerSkin = preview3d ? ((proxyUrls && proxyUrls.skin) || skinUrl) : null;
+            const viewerCape = preview3d ? ((proxyUrls && proxyUrls.cape) || capeUrl) : null;
+            if (viewerSkin) {
+                row.appendChild(buildViewer('skin', viewerSkin, model));
+            }
+            if (viewerCape) {
+                row.appendChild(buildViewer('cape', viewerCape, model));
+            }
+            if (!preview3d && (skinUrl || capeUrl)) {
+                row.appendChild(h('div', { class: 'skin-warn', text: '3D 预览已停用（皮肤贴图反代关闭，配置 skin_proxy: false）；下方为平面贴图。' }));
+            }
+            if (skinUrl) urls.push({ label: '皮肤', url: skinUrl, img: (proxyUrls && proxyUrls.skin) || skinUrl });
+            if (capeUrl) urls.push({ label: '披风', url: capeUrl, img: (proxyUrls && proxyUrls.cape) || capeUrl });
+            if (urls.length === 0) {
+                row.appendChild(h('div', { class: 'skin-warn', text: uuid ? '该来源未返回贴图信息（textures）；正版账号可尝试用 Official 来源查询。' : '没有可渲染的贴图。' }));
+            }
+            panel.appendChild(row);
+            skinProbe(urls, panel);
+            // 平面贴图作为细节参照
+            if (urls.length > 0) {
+                const flatWrap = h('div', { class: 'flat-wrap' + (preview3d ? ' hidden' : '') });
+                urls.forEach(item => {
+                    flatWrap.appendChild(h('div', { class: 'wearable' },
+                        h('img', { class: item.label === '皮肤' ? 'skin-img' : 'cape-img', src: item.img, alt: item.label, loading: 'lazy' }),
+                        h('div', { class: 'wearable-name', text: item.label + ' 原图' })
+                    ));
+                });
+                const toggle = h('button', {
+                    class: 'btn secondary sm',
+                    onclick: () => {
+                        flatWrap.classList.toggle('hidden');
+                        toggle.textContent = flatWrap.classList.contains('hidden') ? '查看平面原图' : '收起平面原图';
+                    }
+                }, preview3d ? '查看平面原图' : '收起平面原图');
+                panel.appendChild(toggle);
+                panel.appendChild(flatWrap);
+            }
+            if (urls.length > 0) {
+                const list = h('div');
+                urls.forEach(item => {
+                    list.appendChild(h('div', { class: 'texture-url' },
+                        h('span', { text: item.label + '：' }),
+                        h('a', { href: item.url, target: '_blank', rel: 'noopener noreferrer', text: item.url }),
+                        h('button', { class: 'btn secondary sm copy-btn', onclick: () => copyText(item.url) }, '复制链接')
+                    ));
+                });
+                panel.appendChild(list);
+            }
+            return panel;
+        }
+
+        // 图片域名不在白名单时给出可操作的提示（含当前白名单）
+        function skinProbe(urls, panel) {
+            if (!urls.length) return;
+            const probe = new Image();
+            probe.onerror = () => {
+                let host = '';
+                try { host = new URL(urls[0].url).host; } catch (e) { host = ''; }
+                const allowed = (lastInfo && lastInfo.allowedImgHosts) ? lastInfo.allowedImgHosts.join('、') : '';
+                panel.appendChild(h('div', { class: 'skin-warn', text: '贴图加载失败（' + host + '）：若已关闭皮肤贴图反代（skin_proxy），需要把该域名加入 config/config.json 的 avatar_domains 数组后重载配置（config.json 不会被提交到 git）。当前白名单：' + (allowed || '见服务端日志 [MANAGE] 图片白名单') }));
+            };
+            probe.src = urls[0].img || urls[0].url;
+        }
+
+        // 曾用名列表（改名搜索追踪）：命中的名字高亮 + 「命中」标记
+        function renderAliasList(currentName, history, hitQuery, hitProfiles) {
+            const box = h('div', { class: 'skin-panel' });
+            box.appendChild(h('h3', { text: '曾用名追踪' }));
+            const names = (history && history.history) ? history.history : [{ name: currentName, current: true }];
+            const hitLower = String(hitQuery || '').toLowerCase();
+            const list = h('ul', { class: 'alias-list' });
+            names.forEach((item, i) => {
+                const isHit = hitLower !== '' && String(item.name).toLowerCase() === hitLower;
+                const li = h('li', { class: (isHit ? 'alias-hit' : '') + (item.current ? ' alias-current' : '') });
+                li.appendChild(h('span', { class: 'alias-note', text: item.current ? '当前名' : '第 ' + (names.length - 1 - i) + ' 个曾用名' }));
+                li.appendChild(h('span', { class: 'alias-name', text: item.name }));
+                if (isHit) li.appendChild(h('span', { class: 'badge from', text: '命中' }));
+                if (item.current) li.appendChild(h('span', { class: 'badge none', text: '使用中' }));
+                li.appendChild(h('button', { class: 'btn secondary sm copy-btn', onclick: () => copyText(item.name) }, '复制'));
+                if (!item.current) {
+                    li.appendChild(h('button', {
+                        class: 'btn secondary sm copy-btn',
+                        onclick: () => queryAliasByName(item.name)
+                    }, '反查此名'));
+                }
+                list.appendChild(li);
+            });
+            box.appendChild(list);
+            if (hitProfiles && hitProfiles.length > 0) {
+                box.appendChild(h('div', { class: 'alias-note', text: '该名字也是以下账号的曾用名：' + hitProfiles.join('、') + '（登录时按档案来源判定归属）' }));
+            }
+            if (history && history.oldest) {
+                box.appendChild(h('div', { class: 'alias-note', text: '档案里记录的最早名称：' + history.oldest }));
+            }
+            return box;
+        }
+
+        // 更名流程图：old_names 是按时间先后累积的，直接用它排出 最早 → … → 当前
+        function renderNameFlow(history, hitQuery) {
+            const box = h('div');
+            if (!history) return box;
+            const currentName = history.name;
+            const olds = Array.isArray(history.old_names) ? history.old_names.slice() : [];
+            if (olds.length === 0) return box;
+            const ordered = olds.map(n => ({ name: n }));
+            if (normalizeName(currentName) !== normalizeName(olds[olds.length - 1])) {
+                ordered.push({ name: currentName, current: true });
+            } else {
+                ordered[ordered.length - 1].current = true;
+            }
+            const hitLower = String(hitQuery || '').toLowerCase();
+            const flow = h('div', { class: 'name-flow' });
+            ordered.forEach((item, i) => {
+                const isCurrent = item.current === true;
+                const isHit = hitLower !== '' && normalizeName(item.name) === hitLower;
+                const isOldest = i === 0 && ordered.length > 1;
+                const node = h('span', {
+                    class: 'flow-node'
+                        + (isCurrent ? ' flow-current' : '')
+                        + (isHit ? ' flow-hit' : '')
+                        + (isOldest ? ' flow-oldest' : '')
+                });
+                node.appendChild(h('span', { text: item.name }));
+                if (isOldest) node.appendChild(h('span', { class: 'flow-tag', text: '最早' }));
+                if (isHit) node.appendChild(h('span', { class: 'flow-tag', text: '查询名' }));
+                if (isCurrent) node.appendChild(h('span', { class: 'flow-tag', text: '当前' }));
+                flow.appendChild(node);
+                if (i < ordered.length - 1) flow.appendChild(h('span', { class: 'flow-arrow', text: '→' }));
+            });
+            box.appendChild(h('div', { class: 'alias-note', text: '更名流程（共 ' + ordered.length + ' 个名称）：' }));
+            box.appendChild(flow);
+            return box;
+        }
+
+        function queryAliasByName(name) {
+            gotoAlias(name);
+            $('aliasWrap').scrollIntoView({ behavior: 'smooth', block: 'center' });
+        }
+
+        async function queryAlias() {
+            const name = $('aliasName').value.trim();
+            if (!name) { showBox('aliasResult', '请输入历史用户名', false); return; }
+            hideBox('aliasResult');
+            try {
+                const res = await manageFetch(`/manage/names/${encodeURIComponent(name)}`);
+                lastAlias = name;
+                lastHitProfiles = (res.matches || []).map(m => m.name);
+                renderAliasResult(res, name);
+                if (lastInfo) renderQueryInfo(lastInfo, lastInfo.query || name);
+            } catch (e) {
+                $('aliasWrap').innerHTML = '';
+                $('aliasWrap').classList.add('empty');
+                $('aliasWrap').textContent = '反查失败：' + e.message;
+            }
+        }
+
+        function renderAliasResult(res, queryName) {
+            const wrap = $('aliasWrap');
+            wrap.innerHTML = '';
+            wrap.classList.remove('empty');
+            const matches = (res && res.matches) ? res.matches : [];
+            const current = (res && res.currentNameOwner) ? res.currentNameOwner : null;
+            // 四类结果都要能独立呈现：曾用名命中 / 当前正在使用 / 两者都有 / 都没有
+            if (matches.length === 0 && !current) {
+                wrap.classList.add('empty');
+                wrap.textContent = `没有玩家以 "${queryName}" 作为曾用名，当前也没有账号叫这个名字`;
+                return;
+            }
+            const summary = [];
+            summary.push(matches.length > 0 ? `${matches.length} 个档案把它当作曾用名` : `没有档案把它当作曾用名`);
+            summary.push(current ? `当前有账号正在使用该名字` : `当前没有账号使用该名字`);
+            wrap.appendChild(h('div', { class: 'alias-note', text: `"${queryName}"：` + summary.join('；') }));
+
+            const renderCard = (m, isCurrent) => {
+                const box = h('div', { class: 'skin-panel' });
+                const head = h('h3');
+                head.appendChild(h('span', { text: '档案 ' + m.name }));
+                head.appendChild(h('span', { class: isCurrent ? 'badge temp' : 'badge from', text: isCurrent ? '当前正在使用' : '曾用名命中' }));
+                box.appendChild(head);
+                box.appendChild(h('div', {
+                    class: 'alias-note',
+                    text: isCurrent
+                        ? `该名字现在由这个档案持有`
+                        : `该名字曾是这个档案的名称，档案已改名为 ${m.name}`
+                }));
+                const rows = [
+                    ['档案当前名', m.name],
+                    ['UUID', m.uuid ? fmtUuid(m.uuid) : ''],
+                    ['来源', m.from || ''],
+                    ['最早记录名', m.oldest || ''],
+                    ['全部曾用名', (m.old_names || []).join('、') || '无'],
+                    ['最后登录', m.records ? fmtTime(m.records.lastLogin) : '']
+                ];
+                const table = h('table', { class: 'parsed-table' });
+                const tbody = h('tbody');
+                rows.forEach(([k, v]) => {
+                    tbody.appendChild(h('tr', null,
+                        h('th', { text: k }),
+                        h('td', null,
+                            h('span', { text: String(v == null ? '' : v) }),
+                            h('button', { class: 'btn secondary sm copy-btn', onclick: () => copyText(String(v == null ? '' : v)) }, '复制')
+                        )
+                    ));
+                });
+                table.appendChild(tbody);
+                box.appendChild(table);
+                box.appendChild(renderNameFlow(m, queryName));
+                box.appendChild(renderAliasList(m.name, m, queryName, []));
+                box.appendChild(h('div', { class: 'skin-panel' },
+                    h('button', { class: 'btn secondary', onclick: () => gotoQuery(m.name) }, '查询当前信息（本地缓存）'),
+                    h('button', { class: 'btn', style: 'margin-left:8px', onclick: () => gotoRemote(m.name) }, '查看该档案完整信息'),
+                    h('button', { class: 'btn secondary', style: 'margin-left:8px', onclick: () => gotoAlias(m.name) }, '追踪该档案的曾用名')
+                ));
+                return box;
+            };
+
+            if (matches.length > 0) {
+                wrap.appendChild(h('div', { class: 'alias-note', text: '① 曾用名命中（这些档案以前叫这个名字）：' }));
+                matches.forEach(m => wrap.appendChild(renderCard(m, false)));
+            }
+            if (current) {
+                wrap.appendChild(h('div', { class: 'alias-note', text: '② 当前正在使用该名字的账号：' }));
+                wrap.appendChild(renderCard(current, true));
             }
         }
 
@@ -1938,7 +2823,9 @@
             const btn = $('banExecute');
             setLoading(btn, true);
             try {
-                const res = await manageFetch(`/ban/${type}/${encodeURIComponent(target)}/${timeMs}`, (mode !== 'unban' && reason) ? { reason } : {});
+                // 走管理接口（会话鉴权）；type 作为提示一起提交，服务端也会按形态自动识别
+                const res = await manageFetch(`/manage/ban/${encodeURIComponent(target)}/${timeMs}`,
+                    (mode !== 'unban' && reason) ? { reason: reason, type: type } : { type: type });
                 toast(`已${desc} ${res.player || target}`, 'success');
                 $('banTarget').value = '';
                 await loadBans(true);
@@ -2025,7 +2912,7 @@
             const ok = await confirmDialog({ title: '解除封禁', message: `确定要解除玩家 ${name} 的封禁吗？`, confirmText: '解封', danger: false });
             if (!ok) return;
             try {
-                await manageFetch(`/ban/name/${encodeURIComponent(name)}/-1`);
+                await manageFetch(`/manage/ban/${encodeURIComponent(name)}/-1`, { type: 'name' });
                 toast(`已解除玩家 ${name} 的封禁`, 'success');
                 await loadBans(true);
                 if (currentTab === 'dashboard') await loadDashboard();
@@ -2262,6 +3149,7 @@
                 $('sessionName').textContent = acc.name || 'default';
                 $('sessionUrl').textContent = acc.url;
                 toast(`已切换到 ${acc.name || acc.url}`, 'success');
+                populateSourceSelect();
                 await testConnection();
             } catch (err) {
                 toast('切换失败: ' + err.message, 'error');

@@ -8,3 +8,7 @@
 /logs
 /.zcode
 /gui-test-screenshots
+/debug.log
+/test
+/.tmp-*
+/vendor/skinview3d.bundle.js

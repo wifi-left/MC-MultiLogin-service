@@ -33,6 +33,123 @@ function buildHasJoinedQuery(username, serverId, ip) {
     if (ip != null) q += `&ip=${encodeURIComponent(ip)}`;
     return q;
 }
+// 单次登录处理中正在解析名字的 uuid（去重，避免同一账号并发触发多轮上游查询）
+const pending_name_lookup = new Set();
+// push 表是普通对象：必须用 hasOwnProperty 判定。
+// 否则名为 toString / constructor / valueOf / __proto__ 等合法玩家名会命中 Object.prototype
+// 上的属性，被误判为"已指定来源"，这些玩家将永远登录失败。
+function pushSourceFor(name) {
+    if (typeof name !== 'string' || name === '') return null;
+    let table = PUSH_LOGINMETHOD_PLAYERS || {};
+    return Object.prototype.hasOwnProperty.call(table, name) ? table[name] : null;
+}
+// uuid 归一化（与 playercache.js 保持一致）
+function normalizeUUID(uuid) {
+    if (uuid == null) return null;
+    return (uuid + "").toLowerCase().replace(/-/g, "");
+}
+function isUUIDLike(value) {
+    return typeof value === 'string' && /^[0-9a-f]{32}$/.test(value.toLowerCase().replace(/-/g, ""));
+}
+// 解码 yggdrasil/mojang profile 的 base64 textures 属性，取出皮肤与披风贴图地址
+// 上游仍可能返回 http 贴图地址；管理页是 https 时会触发混合内容拦截，统一升级为 https
+function upgradeTextureUrl(url) {
+    if (typeof url !== 'string') return url;
+    return url.replace(/^http:\/\//i, 'https://');
+}
+function decodeTexturesProperty(base64Value) {
+    if (typeof base64Value !== 'string' || base64Value === '') return null;
+    try {
+        let parsed = JSON.parse(Buffer.from(base64Value, 'base64').toString('utf8'));
+        if (!parsed || typeof parsed !== 'object') return null;
+        let textures = parsed.textures || {};
+        let skinTextures = textures.SKIN || {};
+        let capeTextures = textures.CAPE || {};
+        let skin = null, cape = null;
+        if (typeof skinTextures.url === 'string' && skinTextures.url !== '') {
+            skin = { url: upgradeTextureUrl(skinTextures.url), model: 'classic' };
+            let meta = skinTextures.metadata || {};
+            if (meta && String(meta.model).toLowerCase() === 'slim') skin.model = 'slim';
+        }
+        if (typeof capeTextures.url === 'string' && capeTextures.url !== '') {
+            cape = { url: upgradeTextureUrl(capeTextures.url) };
+        }
+        return (skin || cape) ? { skin, cape } : null;
+    } catch (e) {
+        return null;
+    }
+}
+function extractTextureInfo(profile) {
+    if (!profile || typeof profile !== 'object') return null;
+    let props = profile.properties;
+    if (!Array.isArray(props)) return null;
+    for (let prop of props) {
+        if (prop && prop.name === 'textures') {
+            let decoded = decodeTexturesProperty(prop.value);
+            if (decoded) return decoded;
+        }
+    }
+    return null;
+}
+/* ==================== 管理面板图片白名单 ====================
+ * 管理面板的皮肤/披风由浏览器直连上游贴图域，CSP img-src 必须逐个列出允许的域名。
+ * 白名单组成（取并集）：
+ *   1. Mojang 官方贴图域（固定）
+ *   2. config 的 skinDomains
+ *   3. config 的 apis[].root 主机
+ *   4. config 的 avatar_domains —— 私有部署的贴图域名写在这里
+ * avatar_domains 建议只写在 config/config.json（已被 .gitignore 忽略、不入库），
+ * 不要写进 config/config_example.json，避免私有域名随仓库公开。
+ */
+const AVATAR_BASE_HOSTS = ['textures.minecraft.net', 'sessionserver.mojang.com', 'api.mojang.com'];
+var AvatarDomains = [];
+// 白名单/ CSP 串在每次请求都会用到，缓存到下一次配置重载
+var avatarHostsCache = null;
+var avatarImgSrcCache = null;
+function skinDomainToHost(value) {
+    if (typeof value !== 'string' || value === '') return null;
+    try {
+        if (/^https?:\/\//i.test(value)) return new URL(value).hostname;
+    } catch (e) {
+        return null;
+    }
+    let host = value.trim().replace(/^\/+/, '').split('/')[0].split(':')[0];
+    return host === '' ? null : host;
+}
+// 当前生效的图片域名白名单（供 CSP 与管理端展示）
+function avatarAllowedHosts() {
+    if (avatarHostsCache) return avatarHostsCache.slice();
+    let hosts = new Set(AVATAR_BASE_HOSTS);
+    for (let d of SkinDomains) {
+        let host = skinDomainToHost(d);
+        if (host) hosts.add(host);
+    }
+    for (let api of URL_APIS) {
+        if (!api || typeof api.root !== 'string' || api.root === '') continue;
+        let host = skinDomainToHost(api.root);
+        if (host) hosts.add(host);
+    }
+    for (let d of AvatarDomains) {
+        let host = skinDomainToHost(d);
+        if (host) hosts.add(host);
+    }
+    avatarHostsCache = Array.from(hosts);
+    return avatarHostsCache.slice();
+}
+function avatarImgSrc() {
+    if (!avatarImgSrcCache) {
+        avatarImgSrcCache = "img-src 'self' data: blob: " + avatarAllowedHosts().map(h => 'https://' + h).join(' ');
+    }
+    return avatarImgSrcCache;
+}
+// 配置里可能写成数组或逗号分隔的字符串
+function parseAvatarDomains(value) {
+    if (Array.isArray(value)) return value.filter(v => typeof v === 'string' && v !== '');
+    if (typeof value === 'string' && value !== '') {
+        return value.split(',').map(s => s.trim()).filter(s => s !== '');
+    }
+    return [];
+}
 const readline = require('readline').createInterface({
     input: process.stdin,
     output: process.stdout
@@ -91,6 +208,162 @@ function manageSecurityHeaders(req, res, next) {
     res.setHeader('X-Content-Type-Options', 'nosniff');
     res.setHeader('Referrer-Policy', 'no-referrer');
     next();
+}
+
+// 皮肤贴图反代：仅允许白名单域名，且必须是图片
+var skinProxyEnabled = true;
+var SKIN_PROXY_MAX_BYTES = 4 * 1024 * 1024;
+function isAllowedSkinHost(host) {
+    if (typeof host !== 'string' || host === '') return false;
+    let list = avatarAllowedHosts();
+    return list.some(h => h.toLowerCase() === host.toLowerCase());
+}
+function guessImageType(buffer) {
+    if (!buffer || buffer.length < 12) return null;
+    if (buffer[0] === 0x89 && buffer[1] === 0x50 && buffer[2] === 0x4E && buffer[3] === 0x47) return 'image/png';
+    if (buffer[0] === 0xFF && buffer[1] === 0xD8 && buffer[2] === 0xFF) return 'image/jpeg';
+    if (buffer.toString('ascii', 0, 6) === 'GIF87a' || buffer.toString('ascii', 0, 6) === 'GIF89a') return 'image/gif';
+    if (buffer.toString('ascii', 8, 12) === 'WEBP') return 'image/webp';
+    return null;
+}
+// 管理面板鉴权：必须持有有效的管理会话 Cookie。
+// 不接受 URL 查询串里的 secret —— URL 会被写进访问日志、浏览器历史与 Referer，等于明文泄露密钥。
+function hasManageAccess(req) {
+    return getAdminSession(req) != null;
+}
+// 管理接口统一门禁：未登录一律 401；会话还必须与接口所属的子配置一致，
+// 避免用 A 子配置的会话去管理 B 子配置的玩家数据。
+// 另外做跨站校验：会话 Cookie 成为唯一凭据后，其它站点不得借用它产生副作用（CSRF 纵深防御）。
+function isCrossSiteRequest(req) {
+    // 1) 首选浏览器自带的 Sec-Fetch-Site：它由浏览器按"发起页面"与"请求目标"的真实来源判定，
+    //    不受反向代理改写 Host 影响，比 Origin/Host 比对可靠得多。
+    //    管理面板自身发起的请求一定是 same-origin；其它站点（含同站不同子域/不同端口）不可信，
+    //    且管理页已用 frame-ancestors 'none' 禁止被嵌入，因此只放行 same-origin / none。
+    let site = req.headers['sec-fetch-site'];
+    if (typeof site === 'string' && site !== '') {
+        let v = site.trim().toLowerCase();
+        return v !== 'same-origin' && v !== 'none';
+    }
+    // 2) 没有该头（老旧浏览器 / 非浏览器客户端）时退回 Origin 与 Host 比对。
+    //    没有 Origin 头的一律放行：curl、服务端脚本不会自动带上受害者的 Cookie，无法被 CSRF 利用。
+    let origin = req.headers.origin;
+    if (!origin) return false;
+    let originHost;
+    try {
+        originHost = new URL(origin).host.toLowerCase();
+    } catch (e) {
+        // "null"（沙箱 iframe / data: 页面）等解析失败的情况按跨站处理
+        return true;
+    }
+    let hosts = [req.headers.host];
+    // 反向代理场景：nginx 默认会把 Host 改写成上游地址，此时只有 X-Forwarded-Host 才等于浏览器看到的主机名。
+    // 该头只有非浏览器客户端能伪造，而它们本就不携带 Cookie，因此放开它不构成 CSRF 风险。
+    if (globleConfig.get("manage_trust_proxy", false) === true && req.headers['x-forwarded-host']) {
+        hosts.push(String(req.headers['x-forwarded-host']).split(',')[0]);
+    }
+    // 大小写不敏感：浏览器会把 Origin 里的主机名小写化，而 Host 头保留用户输入的大小写
+    return !hosts.some(h => typeof h === 'string' && h.trim().toLowerCase() === originHost);
+}
+function requireManageSession(handleUrl) {
+    return function (req, res, next) {
+        let session = getAdminSession(req);
+        if (!session) {
+            res.status(401).send({ "error": "未登录或登录已失效，请重新登录管理面板" }).end();
+            return;
+        }
+        if (handleUrl != null && session.m !== handleUrl) {
+            res.status(403).send({ "error": "当前登录的子配置无权访问该接口" }).end();
+            return;
+        }
+        if (isCrossSiteRequest(req)) {
+            // 打印实际取值，便于排查反向代理改写 Host、主机名大小写等部署问题
+            log(`[MANAGE] Rejected cross-site request to ${req.originalUrl} (Origin: ${req.headers.origin || '-'}, Host: ${req.headers.host || '-'}, Sec-Fetch-Site: ${req.headers['sec-fetch-site'] || '-'})`);
+            res.status(403).send({ "error": "跨站请求被拒绝：请通过配置的 manage_url 同源打开管理面板（若管理端口在反向代理之后，请保留 Host 头或开启 manage_trust_proxy）" }).end();
+            return;
+        }
+        next();
+    };
+}
+// 对外的封禁 API（{url}/ban/*）默认关闭：它会用请求体密钥鉴权、可被外部脚本直接调用，
+// 需要显式配置 ban_api: true 才启用。管理面板的封禁操作走 /manage/ban/*（登录会话鉴权）。
+function requireBanApiEnabled(req, res, next) {
+    if (globleConfig.get("ban_api", false) === true) {
+        next();
+        return;
+    }
+    log(`[BAN_API] Rejected ${req.method} ${req.originalUrl}: ban_api is disabled (default).`);
+    res.status(403).send({
+        "error": "封禁 API 未启用",
+        "errorMessage": "对外封禁接口默认关闭；如需外部调用请在配置中设置 ban_api: true。管理面板请使用 /manage/ban/* 接口。"
+    }).end();
+}
+async function handleSkinProxy(req, res) {
+    if (!skinProxyEnabled) {
+        res.status(404).send({ "error": "Skin proxy is disabled" }).end();
+        return;
+    }
+    if (!hasManageAccess(req)) {
+        res.status(403).send({ "error": "Forbidden" }).end();
+        return;
+    }
+    let raw = String(req.query.url || '').trim();
+    if (raw === '') {
+        res.status(400).send({ "error": "Missing url" }).end();
+        return;
+    }
+    // 上游可能返回 http 贴图地址，统一按 https 取
+    if (raw.startsWith('http://')) raw = 'https://' + raw.substring(7);
+    let target;
+    try {
+        target = new URL(raw);
+    } catch (e) {
+        res.status(400).send({ "error": "Invalid url" }).end();
+        return;
+    }
+    if (target.protocol !== 'https:') {
+        res.status(400).send({ "error": "Only https is allowed" }).end();
+        return;
+    }
+    if (!isAllowedSkinHost(target.hostname)) {
+        res.status(403).send({ "error": "Domain not in whitelist: " + target.hostname }).end();
+        return;
+    }
+    try {
+        let data = await fetchWithTimeout(target.toString(), { method: 'GET' });
+        if (!data.ok) {
+            res.status(data.status === 404 ? 404 : 502).send({ "error": "Upstream returned " + data.status }).end();
+            return;
+        }
+        let declared = parseInt(data.headers.get('content-length'));
+        if (Number.isFinite(declared) && declared > SKIN_PROXY_MAX_BYTES) {
+            res.status(413).send({ "error": "Image too large" }).end();
+            return;
+        }
+        let buf = Buffer.from(await data.arrayBuffer());
+        if (buf.length > SKIN_PROXY_MAX_BYTES) {
+            res.status(413).send({ "error": "Image too large" }).end();
+            return;
+        }
+        let type = guessImageType(buf);
+        if (!type) {
+            res.status(415).send({ "error": "Upstream response is not a supported image" }).end();
+            return;
+        }
+        res.setHeader('Content-Type', type);
+        res.setHeader('Cache-Control', 'private, max-age=300');
+        res.setHeader('Content-Security-Policy', "sandbox; default-src 'none'");
+        res.send(buf).end();
+    } catch (e) {
+        console.error(e);
+        res.status(502).send({ "error": "Failed to fetch skin texture" }).end();
+    }
+}
+// 是否使用反代：默认启用，可用 skin_proxy: false 关闭
+function skinUrlTransform(raw) {
+    if (typeof raw !== 'string' || raw === '') return raw;
+    if (!skinProxyEnabled) return raw;
+    let base = (typeof manageUrl === 'string' && manageUrl !== '') ? manageUrl.replace(/\/+$/, '') : '/manage';
+    return base + '/skin-proxy?url=' + encodeURIComponent(raw);
 }
 
 // 管理接口限流：每 IP 每分钟最多 manage_rate_limit 次（默认 120，0 关闭），防暴力猜密钥
@@ -199,14 +472,26 @@ function verifySessionToken(token) {
         return null;
     }
 }
+// 原型安全的字典：玩家名/来源 id 都可能与 Object.prototype 上的属性同名
+function newDict() {
+    return Object.create(null);
+}
 function parseCookies(req) {
-    let out = {};
+    let out = newDict();
     let raw = req.headers.cookie;
     if (!raw) return out;
     raw.split(';').forEach(pair => {
         let i = pair.indexOf('=');
         if (i < 0) return;
-        out[pair.slice(0, i).trim()] = decodeURIComponent(pair.slice(i + 1).trim());
+        let value;
+        try {
+            value = decodeURIComponent(pair.slice(i + 1).trim());
+        } catch (e) {
+            // 畸形百分号编码（如 "x=%"）会让 decodeURIComponent 抛异常。
+            // 这里必须吞掉：否则请求 500，异步路由（皮肤反代）还会变成未处理拒绝
+            return;
+        }
+        out[pair.slice(0, i).trim()] = value;
     });
     return out;
 }
@@ -245,22 +530,28 @@ for (let i = 0; i < HANDLES.length; i++) {
     app.get(`${url}/sessionserver/session/minecraft/profile/*`, publicLimiter, function (req, res) { urlHandle_profiles(req, res, idx) })
     app.get(`${url}/api/minecraft/profile/lookup/name/*`, publicLimiter, function (req, res) { urlHandle_profiles(req, res, idx) })
 
-    // Ban API endpoints
+    // Ban API endpoints（对外机器接口：默认关闭，需配置 ban_api: true；用请求体 secret 鉴权）
     let mApp = manageApp || app;
-    mApp.post(`${url}/ban/uuid/:uuid/:time`, manageLimiter, function (req, res) { urlHandle_ban_uuid(req, res, idx) });
-    mApp.post(`${url}/ban/name/:name/:time`, manageLimiter, function (req, res) { urlHandle_ban_name(req, res, idx) });
+    mApp.post(`${url}/ban/uuid/:uuid/:time`, manageLimiter, requireBanApiEnabled, function (req, res) { urlHandle_ban_uuid(req, res, idx) });
+    mApp.post(`${url}/ban/name/:name/:time`, manageLimiter, requireBanApiEnabled, function (req, res) { urlHandle_ban_name(req, res, idx) });
 
-    // Management API endpoints
-    mApp.post(`${url}/manage/query/:player`, manageLimiter, function (req, res) { urlHandle_manage_query(req, res, idx) });
-    mApp.post(`${url}/manage/list`, manageLimiter, function (req, res) { urlHandle_manage_list(req, res, idx) });
-    mApp.post(`${url}/manage/bans`, manageLimiter, function (req, res) { urlHandle_manage_bans(req, res, idx) });
-    mApp.post(`${url}/manage/modify/:player`, manageLimiter, function (req, res) { urlHandle_manage_modify(req, res, idx) });
-    mApp.post(`${url}/manage/delete/:player`, manageLimiter, function (req, res) { urlHandle_manage_delete(req, res, idx) });
-    mApp.post(`${url}/manage/rebuild-uuid`, manageLimiter, function (req, res) { urlHandle_manage_rebuild_uuid(req, res, idx) });
-    mApp.post(`${url}/manage/stats`, manageLimiter, function (req, res) { urlHandle_manage_stats(req, res, idx) });
-    mApp.post(`${url}/manage/export`, manageLimiter, function (req, res) { urlHandle_manage_export(req, res, idx) });
-    mApp.post(`${url}/manage/batch-delete`, manageLimiter, function (req, res) { urlHandle_manage_batch_delete(req, res, idx) });
-    mApp.post(`${url}/manage/batch-unban`, manageLimiter, function (req, res) { urlHandle_manage_batch_unban(req, res, idx) });
+    // Management API endpoints —— 全部要求管理面板已登录（会话按子配置绑定）
+    let gate = requireManageSession(url);
+    mApp.post(`${url}/manage/ban/:target/:time`, manageLimiter, gate, function (req, res) { urlHandle_manage_ban(req, res, idx) });
+    mApp.post(`${url}/manage/query/:player`, manageLimiter, gate, function (req, res) { urlHandle_manage_query(req, res, idx) });
+    mApp.post(`${url}/manage/list`, manageLimiter, gate, function (req, res) { urlHandle_manage_list(req, res, idx) });
+    mApp.post(`${url}/manage/bans`, manageLimiter, gate, function (req, res) { urlHandle_manage_bans(req, res, idx) });
+    mApp.post(`${url}/manage/modify/:player`, manageLimiter, gate, function (req, res) { urlHandle_manage_modify(req, res, idx) });
+    mApp.post(`${url}/manage/delete/:player`, manageLimiter, gate, function (req, res) { urlHandle_manage_delete(req, res, idx) });
+    mApp.post(`${url}/manage/rebuild-uuid`, manageLimiter, gate, function (req, res) { urlHandle_manage_rebuild_uuid(req, res, idx) });
+    mApp.post(`${url}/manage/check-uuid`, manageLimiter, gate, function (req, res) { urlHandle_manage_check_uuid(req, res, idx) });
+    mApp.post(`${url}/manage/player-info/:query`, manageLimiter, gate, function (req, res) { urlHandle_manage_player_info(req, res, idx) });
+    mApp.post(`${url}/manage/names/:query`, manageLimiter, gate, function (req, res) { urlHandle_manage_names(req, res, idx) });
+    mApp.post(`${url}/manage/avatar/:query`, manageLimiter, gate, function (req, res) { urlHandle_manage_avatar(req, res, idx) });
+    mApp.post(`${url}/manage/stats`, manageLimiter, gate, function (req, res) { urlHandle_manage_stats(req, res, idx) });
+    mApp.post(`${url}/manage/export`, manageLimiter, gate, function (req, res) { urlHandle_manage_export(req, res, idx) });
+    mApp.post(`${url}/manage/batch-delete`, manageLimiter, gate, function (req, res) { urlHandle_manage_batch_delete(req, res, idx) });
+    mApp.post(`${url}/manage/batch-unban`, manageLimiter, gate, function (req, res) { urlHandle_manage_batch_unban(req, res, idx) });
 
 }
 // 皮肤站处理开始
@@ -270,6 +561,12 @@ function getMsg(key, vars) {
     const defaults = {
         "DUPLICATE_NAME": '该玩家名已被来自 "{from}" 的账号占用，不允许其他皮肤站的同名玩家登录',
         "DUPLICATE_UUID": '该账号的 UUID 与已有玩家 "{name}"（来自 "{from}"）冲突',
+        "NAME_TAKEN": '玩家名 "{name}" 已被来自 "{from}" 的账号占用，且该账号当前仍使用此名称',
+        "NAME_TAKEN_OTHER_SOURCE": '玩家名 "{name}" 已被来自 "{from}" 的账号占用，来源不同无法自动改名',
+        "NAME_UNCHANGED": '玩家名 "{name}" 仍由该账号（来自 "{from}"）持有，无法为你改名，请更换名称',
+        "NAME_LOOKUP_FAILED": '无法确认玩家名 "{name}" 持有者的当前名称（来源 "{from}" 查询失败），请稍后再试或更换名称',
+        "HOLDER_RENAMED": '玩家名 "{name}" 的原持有者已改名为 "{newName}"，已自动为其更新档案',
+        "HOLDER_REMOVED": '玩家名 "{name}" 的原持有者账号已不存在，已移除其历史档案',
         "BANNED_FOREVER": "您已被永久封禁",
         "BANNED": "您已被封禁",
         "NOT_FOUND": "玩家未在任何已配置的皮肤站找到",
@@ -311,6 +608,36 @@ function buildDetailError(k, cache, playerName) {
         }
         return body;
     }
+    if (k.error === "NAME_TAKEN") {
+        let key = k.reason === "other_source" ? "NAME_TAKEN_OTHER_SOURCE" : "NAME_TAKEN";
+        return {
+            "error": "ForbiddenOperationException",
+            "errorMessage": getMsg(key, { name: k.existingName, from: k.existingFrom }),
+            "cause": key
+        };
+    }
+    if (k.error === "NAME_UNCHANGED") {
+        return {
+            "error": "ForbiddenOperationException",
+            "errorMessage": getMsg("NAME_UNCHANGED", { name: k.existingName, from: k.existingFrom }),
+            "cause": "NAME_UNCHANGED"
+        };
+    }
+    if (k.error === "NAME_LOOKUP_FAILED") {
+        return {
+            "error": "ForbiddenOperationException",
+            "errorMessage": getMsg("NAME_LOOKUP_FAILED", { name: k.existingName, from: k.existingFrom }),
+            "cause": "NAME_LOOKUP_FAILED"
+        };
+    }
+    if (k.error === "HOLDER_RENAMED" || k.error === "HOLDER_REMOVED") {
+        let key = k.error;
+        return {
+            "error": "ForbiddenOperationException",
+            "errorMessage": getMsg(key, { name: k.existingName, newName: k.newName || "" }),
+            "cause": key
+        };
+    }
     if (k.error === "DUPLICATE_UUID") {
         return {
             "error": "ForbiddenOperationException",
@@ -324,20 +651,57 @@ function buildDetailError(k, cache, playerName) {
         "cause": k.error || "UNKNOWN"
     };
 }
+// 改名冲突处理用的上游查询闭包：只在旧档案自身的来源里查（来源不同一律不查）
+function buildNameResolver(api) {
+    return {
+        available: true,
+        // 本轮改名链中已处理过的 uuid：命中即判定为环，立即终止
+        visited: [],
+        nameForUuid: async function (uuid) {
+            let key = normalizeUUID(uuid);
+            if (key == null) return { status: "missing" };
+            // 并发去重：同一 uuid 已有解析在进行时不重复打上游，也不误判为"账号不存在"
+            if (pending_name_lookup.has(key)) return { status: "failed" };
+            pending_name_lookup.add(key);
+            try {
+                return await probeNameForUuid(api, key);
+            } finally {
+                pending_name_lookup.delete(key);
+            }
+        }
+    };
+}
 function trySavePlayer(player, api, response_data, res, from, detail) {
     log("[FOUND] Found <" + player + "> should come from <" + api.name + ">");
     let dat = response_data;
     // 登录时间与 ip 随 add 一次性写入缓存，不再写后再读再写
-    let k = PlayerCaches[from].add(dat.name, dat.id, api.id, { lastLogin: new Date().getTime(), ip: null });
-    if (k !== true) {
-        if (detail && k && k.error) {
-            res.status(403).send(buildDetailError(k, PlayerCaches[from], dat.name)).end();
-        } else {
-            res.status(204).end();
-        }
-    } else {
-        res.send(response_data).end();
-    }
+    let resolver = buildNameResolver(api);
+    PlayerCaches[from].add(dat.name, dat.id, api.id, { lastLogin: new Date().getTime(), ip: null }, resolver, 0)
+        .then(k => {
+            if (k === true) {
+                res.send(response_data).end();
+                return;
+            }
+            if (k && (k.error === "HOLDER_RENAMED" || k.error === "HOLDER_REMOVED")) {
+                // 冲突的另一方已被自动处理，本次登录本身是成功的
+                log(`[RENAME] conflict resolved on the other side (${k.error}: ${k.existingName} -> ${k.newName || '(removed)'}), allowing <${player}> to join.`);
+                res.send(response_data).end();
+                return;
+            }
+            if (detail && k && k.error) {
+                res.status(403).send(buildDetailError(k, PlayerCaches[from], dat.name)).end();
+            } else {
+                res.status(204).end();
+            }
+        })
+        .catch(e => {
+            console.error(e);
+            if (detail) {
+                res.status(403).send(buildDetailError({ error: "NAME_LOOKUP_FAILED", existingName: player }, PlayerCaches[from], dat.name)).end();
+            } else {
+                res.status(204).end();
+            }
+        });
 }
 function urlHandle_root(req, res, from) {
     // console.log('404 handler..')
@@ -350,19 +714,26 @@ function urlHandle_root(req, res, from) {
 }
 function fetchPlayerInfo_step(args, apis, res, player, from, detail) {
     if (apis.length <= 0) {
-        detailReject(res, detail, "NOT_FOUND", getMsg("NOT_FOUND", {}));
-        log(`${player} not found in the remote server.`);
         try {
+            detailReject(res, detail, "NOT_FOUND", getMsg("NOT_FOUND", {}));
+            log(`${player} not found in the remote server.`);
+        } finally {
+            // 无论响应是否发送成功都要释放 pending 标记，否则该玩家会被永久判为"登录过快"
             delete pending_players[player];
-        } catch (e) {
-            log(e);
         }
         return;
     }
     let a = apis[0];
     let api = lookupApi(a);
-    let b = apis;
-    b.splice(0, 1);
+    // 不能原地 splice 传入数组：这里改用切片，避免调用方持有的引用被改写
+    let b = apis.slice(1);
+    // 配置里写了不存在的来源 id 时必须跳过：api 为 null 时访问 api.name 会抛异常，
+    // 而异常会让 pending_players 标记泄漏，该玩家此后一直收到"登录过快"
+    if (!api) {
+        log("[WARN] Unknown api id <" + a + "> in config, skipping.");
+        fetchPlayerInfo_step(args, b, res, player, from, detail);
+        return;
+    }
     log("Looking up " + api.name + " [" + player + "]")
     if (api.id == 'original') {
         fetchWithTimeout(`https://sessionserver.mojang.com/session/minecraft/hasJoined${args}`).then(data => {
@@ -409,7 +780,8 @@ function fetchPlayerInfo_step(args, apis, res, player, from, detail) {
         })
     }
 }
-const pending_players = {};
+// 原型安全：玩家名可能等于 Object.prototype 上的属性名（toString / constructor / __proto__ ...）
+const pending_players = Object.create(null);
 function urlHandle_joinServer(req, res, from) {
     // console.log('404 handler..')
     // console.log(req.url);
@@ -464,10 +836,12 @@ function urlHandle_joinServer(req, res, from) {
     }
     let api = info ? lookupApi(info.from) : null;
 
-    if (PUSH_LOGINMETHOD_PLAYERS[profile_name] != undefined) {
-        api = lookupApi(PUSH_LOGINMETHOD_PLAYERS[profile_name]);
+    let pushedFrom = pushSourceFor(profile_name);
+    if (pushedFrom != null) {
+        api = lookupApi(pushedFrom);
     } else {
-        if (info.lastLogin) {
+        // info 可能为 false（档案不存在）：此前这里会直接抛异常，登录请求挂起
+        if (info && info.lastLogin) {
             let lastLoginTime = parseInt(info.lastLogin);
             if (!isNaN(lastLoginTime)) {
                 if (new Date().getTime() - lastLoginTime < loginCooldownTime) {
@@ -482,7 +856,13 @@ function urlHandle_joinServer(req, res, from) {
         log("Looking up for " + profile_name + " but not found. Try to search for it.");
         pending_players[profile_name] = true;
         let newH = JSON.parse(JSON.stringify(handle.handles))
-        fetchPlayerInfo_step(buildHasJoinedQuery(username, serverId, ip), newH, res, username, from, detail);
+        try {
+            fetchPlayerInfo_step(buildHasJoinedQuery(username, serverId, ip), newH, res, username, from, detail);
+        } catch (e) {
+            // 同步异常也要释放标记，否则该玩家会被永久拦截
+            delete pending_players[profile_name];
+            throw e;
+        }
     } else {
         if (handle.handles.includes(api.id)) {
             if (api.id == 'original') {
@@ -582,13 +962,20 @@ function urlHandle_profiles(req, res, from) {
         api = lookupApi(DefaultSKINSITE);
     } else {
         info = PlayerCaches[from].lookup(profile_name);
-        api = lookupApi(info.from);
-        if (info.uuid != null) {
+        // 走内存索引找到名字、但档案文件已被删除时 lookup 返回 false，此前会抛异常
+        api = info ? lookupApi(info.from) : null;
+        if (info && info.uuid != null) {
             url = info.uuid;
         }
     }
-    if (PUSH_LOGINMETHOD_PLAYERS[profile_name] != undefined) {
-        api = lookupApi(PUSH_LOGINMETHOD_PLAYERS[profile_name]);
+    let pushedFrom = pushSourceFor(profile_name);
+    if (pushedFrom != null) {
+        api = lookupApi(pushedFrom);
+        // push 表里写了不存在的来源 id：退回到默认来源，否则下面 api.name 会空指针 500
+        if (api == null) {
+            log("[PROFILE][WARN] Unknown api id <" + pushedFrom + "> in push config, falling back to <" + DefaultSKINSITE + ">.");
+            api = lookupApi(DefaultSKINSITE);
+        }
     } else if (api == null) {
         log("[PROFILE] Looking up for " + profile_name + " but not found.");
         // res.status(204).end();
@@ -602,6 +989,17 @@ function urlHandle_profiles(req, res, from) {
             }).end();
             return;
         }
+    }
+    // 按名字查询但来源仍为空（默认来源也没在 apis 里配置）：按"还没登录过服务器"处理，
+    // 否则下面分支会访问 api.name / api.id 抛空指针导致 500
+    if (api == null && profile_name != null) {
+        log("[PROFILE] No available source for <" + profile_name + "> (check apis / default config).");
+        res.status(200).send({
+            "error": "ForbiddenOperationException",
+            "errorMessage": "这位玩家可能还没有登录过服务器",
+            "cause": ""
+        }).end();
+        return;
     }
     if (profile_name == null) {
         log("[PROFILE] Looking up for " + url + " from <Original>");
@@ -691,6 +1089,249 @@ function lookupApi(apiname) {
     }
     return null;
 }
+/* ==================== 上游档案 / 贴图 解析 ==================== */
+// 统一的档案响应读取：限制体积并解析 JSON；204/非 2xx 视为"无档案"
+async function readProfileJson(resp) {
+    try {
+        if (!resp || !resp.ok) return null;
+        let declared = parseInt(resp.headers.get('content-length'));
+        if (Number.isFinite(declared) && declared > 2 * 1024 * 1024) return null;
+        let text = await resp.text();
+        if (!text || text.length > 2 * 1024 * 1024) return null;
+        let data = JSON.parse(text);
+        return (data && typeof data === 'object') ? data : null;
+    } catch (e) {
+        return null;
+    }
+}
+// 从某个来源按 uuid 取档案（官方走 Mojang 会话服务）
+async function fetchProfileByUuid(api, uuid) {
+    if (!api || uuid == null || uuid === '') return null;
+    let target = normalizeUUID(uuid);
+    try {
+        if (api.id === 'original') {
+            let r = await fetchWithTimeout('https://sessionserver.mojang.com/session/minecraft/profile/' + encodeURIComponent(target));
+            return await readProfileJson(r);
+        }
+        if (!api.root) return null;
+        let r = await fetchWithTimeout(api.root + '/sessionserver/session/minecraft/profile/' + encodeURIComponent(target));
+        return await readProfileJson(r);
+    } catch (e) {
+        console.error(e);
+        return null;
+    }
+}
+// 账号当前名字（未改名返回同名，账号不存在返回 null）
+async function getNameForUuid(api, uuid) {
+    if (!api) return null;
+    let data = await fetchProfileByUuid(api, uuid);
+    if (!data) return null;
+    let name = data.name;
+    return (typeof name === 'string' && name !== '') ? name : null;
+}
+// 带状态区分地查询 uuid 的当前名字：found（拿到名字）/ missing（上游明确无此账号）/ failed（查询失败）
+async function probeNameForUuid(api, uuid) {
+    if (!api) return { status: "failed" };
+    let target = normalizeUUID(uuid);
+    if (target == null) return { status: "missing" };
+    try {
+        let resp;
+        if (api.id === 'original') {
+            resp = await fetchWithTimeout('https://sessionserver.mojang.com/session/minecraft/profile/' + encodeURIComponent(target));
+        } else if (api.root) {
+            resp = await fetchWithTimeout(api.root + '/sessionserver/session/minecraft/profile/' + encodeURIComponent(target));
+        } else {
+            return { status: "failed" };
+        }
+        if (resp.status === 204 || resp.status === 404) return { status: "missing" };
+        if (!resp.ok) return { status: "failed" };
+        let declared = parseInt(resp.headers.get('content-length'));
+        if (Number.isFinite(declared) && declared > 2 * 1024 * 1024) return { status: "failed" };
+        let text = await resp.text();
+        if (!text || text.length > 2 * 1024 * 1024) return { status: "failed" };
+        let data = JSON.parse(text);
+        let name = data && data.name;
+        if (typeof name === 'string' && name !== '') return { status: "found", name: name };
+        return { status: "missing" };
+    } catch (e) {
+        console.error(e);
+        return { status: "failed" };
+    }
+}
+// 从某个来源按名字取档案（非官方 yggdrasil 走 /api/profiles/minecraft）
+async function fetchProfileByName(api, name) {
+    if (!api || name == null || name === '') return null;
+    try {
+        if (api.id === 'original') {
+            let r = await fetchWithTimeout('https://api.mojang.com/users/profiles/minecraft/' + encodeURIComponent(name));
+            let data = await readProfileJson(r);
+            if (!data || !data.id) return null;
+            return { id: data.id, name: data.name };
+        }
+        if (!api.root) return null;
+        let r = await fetchWithTimeout(api.root + '/api/profiles/minecraft', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify([name])
+        });
+        let data = await readProfileJson(r);
+        if (Array.isArray(data)) return data.length > 0 ? data[0] : null;
+        if (data && data.id) return data;
+        return null;
+    } catch (e) {
+        console.error(e);
+        return null;
+    }
+}
+// 短 TTL 档案缓存：管理端反复查询同一玩家时不重复打上游
+const profile_cache = new Map();
+const PROFILE_CACHE_TTL = 60 * 1000;
+function getCachedProfile(key) {
+    let item = profile_cache.get(key);
+    if (!item) return null;
+    if (Date.now() > item.expire) {
+        profile_cache.delete(key);
+        return null;
+    }
+    return item.value;
+}
+function setCachedProfile(key, value) {
+    if (profile_cache.size > 500) {
+        let now = Date.now();
+        for (let [k, v] of profile_cache) {
+            if (now > v.expire) profile_cache.delete(k);
+        }
+    }
+    profile_cache.set(key, { value: value, expire: Date.now() + PROFILE_CACHE_TTL });
+}
+// 管理端：按名字或 uuid 解析玩家真实信息（缓存优先 → 子配置 handles 顺序）
+async function resolvePlayerInfo(cache, handle, query, fromOverride) {
+    let info = null;
+    let uuid = null;
+    if (isUUIDLike(query)) {
+        uuid = normalizeUUID(query);
+        let name = cache.lookup_uuid(uuid);
+        if (name) info = cache.lookup(name);
+    } else {
+        info = cache.lookup(query);
+        if (info && info.uuid) uuid = normalizeUUID(info.uuid);
+    }
+    let preferred = null;
+    if (fromOverride) {
+        preferred = lookupApi(fromOverride);
+        if (!preferred) return { error: "SOURCE_UNSUPPORTED", message: "未知来源: " + fromOverride };
+    } else if (info && info.from) {
+        preferred = lookupApi(info.from);
+    }
+    let chain = [];
+    let candidates = [];
+    if (preferred) candidates.push(preferred);
+    let pushedSourceId = info ? pushSourceFor(info.name) : null;
+    if (pushedSourceId != null) {
+        let pushed = lookupApi(pushedSourceId);
+        if (pushed) candidates.push(pushed);
+    }
+    for (let id of (handle.handles || [])) {
+        let api = lookupApi(id);
+        if (api) candidates.push(api);
+    }
+    let seen = newDict();
+    let list = [];
+    for (let api of candidates) {
+        if (!api || seen[api.id]) continue;
+        seen[api.id] = true;
+        list.push(api);
+    }
+    let profile = null;
+    let resolvedFrom = null;
+    for (let api of list) {
+        let target = null;
+        let cacheKey = null;
+        if (uuid) {
+            target = uuid;
+            cacheKey = 'u:' + api.id + ':' + uuid;
+        } else {
+            target = query;
+            cacheKey = 'n:' + api.id + ':' + String(query).toLowerCase();
+        }
+        let got = getCachedProfile(cacheKey);
+        if (got === null) {
+            got = uuid ? await fetchProfileByUuid(api, target) : await fetchProfileByName(api, target);
+            setCachedProfile(cacheKey, got);
+        }
+        chain.push({ from: api.id, fromName: api.name, found: !!got });
+        if (got) {
+            profile = got;
+            resolvedFrom = api.id;
+            break;
+        }
+    }
+    if (!profile) {
+        return {
+            error: "PLAYER_NOT_FOUND",
+            message: "未在任何已配置来源查询到该玩家",
+            lookupChain: chain
+        };
+    }
+    let finalName = (typeof profile.name === 'string' && profile.name !== '') ? profile.name : (info ? info.name : query);
+    let finalUUID = profile.id ? normalizeUUID(profile.id) : uuid;
+    // 档案可能缺 textures（如 /api/profiles/minecraft 的返回值），补取一次完整档案
+    let textureSource = profile;
+    if (!extractTextureInfo(textureSource) && finalUUID) {
+        let api = lookupApi(resolvedFrom);
+        let cacheKey = 'u:' + resolvedFrom + ':' + finalUUID;
+        let full = getCachedProfile(cacheKey);
+        if (full === null) {
+            full = await fetchProfileByUuid(api, finalUUID);
+            setCachedProfile(cacheKey, full);
+        }
+        if (full) textureSource = full;
+    }
+    let textures = extractTextureInfo(textureSource);
+    // 贴图地址改写：启用反代时改成同源地址（WebGL 预览与 <img> 都不受跨站限制）；
+    // 关闭反代时保留直链，平面图片仍可显示，但 3D 预览停用（见 preview3d）
+    if (textures) {
+        textures = JSON.parse(JSON.stringify(textures));
+        if (skinProxyEnabled) {
+            if (textures.skin) textures.skin.proxyUrl = skinUrlTransform(textures.skin.url);
+            if (textures.cape) textures.cape.proxyUrl = skinUrlTransform(textures.cape.url);
+        }
+    }
+    if (!info && finalName) info = cache.lookup(finalName);
+    let history = finalName ? cache.name_history(finalName) : null;
+    let warnings = [];
+    if (!textures) {
+        warnings.push("该来源未提供贴图信息（textures），无法渲染皮肤/披风");
+    } else if (!skinProxyEnabled) {
+        warnings.push("皮肤贴图反代已关闭（配置 skin_proxy: false）：3D 预览已停用，仅显示平面贴图");
+    }
+    return {
+        query: query,
+        name: finalName,
+        uuid: finalUUID,
+        resolvedFrom: resolvedFrom,
+        fromName: lookupApi(resolvedFrom) ? lookupApi(resolvedFrom).name : resolvedFrom,
+        profileFrom: info ? info.from : null,
+        cache: info ? {
+            name: info.name,
+            uuid: info.uuid,
+            from: info.from,
+            ban: info.ban === true,
+            banTime: info.banTime,
+            banReason: info.banReason,
+            lastLogin: info.lastLogin,
+            ip: info.ip,
+            old_names: Array.isArray(info['old_names']) ? info['old_names'] : []
+        } : null,
+        textures: textures,
+        history: history,
+        lookupChain: chain,
+        skinProxy: skinProxyEnabled,
+        preview3d: skinProxyEnabled && textures != null,
+        allowedImgHosts: avatarAllowedHosts(),
+        warnings: warnings
+    };
+}
 function urlHandle_profiles_post(req, res, from) {
     // console.log('404 handler..')
     // console.log(req.url);
@@ -699,6 +1340,12 @@ function urlHandle_profiles_post(req, res, from) {
     req.on('end', () => {
         try {
             let bdy = JSON.parse(body.value);
+            // 协议只接受"最多一个名字"的数组；非数组/空数组按"没有这个玩家"处理，
+            // 避免 undefined 之类的值被透传到上游查询
+            if (!Array.isArray(bdy) || bdy.length <= 0 || typeof bdy[0] !== 'string' || bdy[0] === '') {
+                res.status(204).end();
+                return;
+            }
             if (bdy.length > 1) {
                 res.status(403).send({
                     "error": "ForbiddenOperationException",
@@ -707,13 +1354,15 @@ function urlHandle_profiles_post(req, res, from) {
                 }).end();
                 return;
             }
-            for (let i = 0; i < 1; i++) {
-                let info = PlayerCaches[from].lookup(bdy[i]);
+            let queryName = bdy[0];
+            {
+                let info = PlayerCaches[from].lookup(queryName);
                 let api = info ? lookupApi(info.from) : null;
-                if (PUSH_LOGINMETHOD_PLAYERS[bdy[i]] != undefined) {
-                    api = lookupApi(PUSH_LOGINMETHOD_PLAYERS[bdy[i]]);
+                let pushedSourceId = pushSourceFor(queryName);
+                if (pushedSourceId != null) {
+                    api = lookupApi(pushedSourceId);
                 } else if (api == null) {
-                    log("[PROFILE][POST] Looking up <" + bdy[i] + "> but not found.")
+                    log("[PROFILE][POST] Looking up <" + queryName + "> but not found.")
                     api = lookupApi(DefaultSKINSITE);
                     if (api == null) {
                         res.status(200).send({
@@ -725,10 +1374,10 @@ function urlHandle_profiles_post(req, res, from) {
                     }
 
                 }
-                log("[PROFILE][POST] Looking up <" + bdy[i] + "> from <" + api.name + ">")
+                log("[PROFILE][POST] Looking up <" + queryName + "> from <" + api.name + ">")
                 if (api.id == 'original') {
                     fetchWithTimeout("https://api.minecraftservices.com/minecraft/profile/lookup/bulk/byname", {
-                        body: JSON.stringify([bdy[i]]),
+                        body: JSON.stringify([queryName]),
                         method: 'POST',
                         headers: {
                             'Content-Type': 'application/json'
@@ -745,8 +1394,9 @@ function urlHandle_profiles_post(req, res, from) {
 
                 } else {
                     // console.log(api.root + "/api/profiles/minecraft")
+                    // 发给上游的必须是 JSON 文本，早前这里传的是请求体累加器对象，上游只会收到 "[object Object]"
                     fetchWithTimeout(api.root + "/api/profiles/minecraft", {
-                        body: body,
+                        body: JSON.stringify([queryName]),
                         method: 'POST',
                         headers: {
                             'Content-Type': 'application/json'
@@ -775,6 +1425,65 @@ function urlHandle_profiles_post(req, res, from) {
     });
 }
 
+// 统一封禁动作：time 0=永久、-1=解封、正整数=毫秒时长
+function applyBan(cache, playerName, time, reason) {
+    let t = parseInt(time);
+    if (t === 0) return { ok: cache.new_ban(playerName, 0, reason), desc: '永久封禁' };
+    if (t === -1) return { ok: cache.new_ban(playerName, -1), desc: '解除封禁' };
+    return { ok: cache.new_ban(playerName, t, reason), desc: '临时封禁 ' + t + 'ms' };
+}
+// 管理面板封禁/解封（走登录会话，面板不再调用对外的 /ban/* 接口）
+// body 可选：{ reason, type: 'name' | 'uuid' }，不传 type 时按目标形态自动识别
+function urlHandle_manage_ban(req, res, from) {
+    let target = String(req.params.target == null ? '' : req.params.target).trim();
+    let time = parseInt(req.params.time);
+    let body = readBodyAccumulator(req, res);
+    req.on('end', () => {
+        try {
+            let data = {};
+            if (body.value) {
+                try { data = JSON.parse(body.value) || {}; } catch (e) { data = {}; }
+            }
+            if (target === '') {
+                res.status(400).send({ "error": "Missing player name or uuid" }).end();
+                return;
+            }
+            if (!Number.isFinite(time)) {
+                res.status(400).send({ "error": "Invalid time" }).end();
+                return;
+            }
+            let kind = (data.type === 'uuid' || data.type === 'name') ? data.type : 'auto';
+            let cache = PlayerCaches[from];
+            let playerName = null;
+            if (kind === 'uuid' || (kind === 'auto' && isUUIDLike(target))) {
+                playerName = cache.lookup_uuid(target);
+            } else if (checkName(target)) {
+                playerName = target;
+            } else {
+                res.status(400).send({ "error": "Invalid player name or uuid" }).end();
+                return;
+            }
+            if (!playerName || !cache.lookup(playerName)) {
+                res.status(404).send({
+                    "error": "该子配置的缓存中没有这个玩家（只查询当前子配置的 cache 目录）",
+                    "cause": "PLAYER_NOT_FOUND"
+                }).end();
+                return;
+            }
+            let reason = (typeof data.reason === 'string' && data.reason.trim() !== '') ? data.reason.trim() : null;
+            let r = applyBan(cache, playerName, time, reason);
+            if (!r.ok) {
+                res.status(500).send({ "error": "Failed to apply ban" }).end();
+                return;
+            }
+            log(`[MANAGE] ${r.desc} <${playerName}>${playerName === target ? '' : ' (' + target + ')'}`);
+            res.send({ "success": true, "player": playerName, "time": time, "desc": r.desc }).end();
+        } catch (e) {
+            console.error(e);
+            res.status(400).send({ "error": "Invalid request" }).end();
+        }
+    });
+}
 function urlHandle_ban_uuid(req, res, from) {
     let uuid = req.params.uuid;
     let time = parseInt(req.params.time);
@@ -876,24 +1585,20 @@ function urlHandle_ban_name(req, res, from) {
     });
 }
 
+/* ==================== 管理面板 API ====================
+ * 这一组 handler 只做业务处理：鉴权统一交给路由上的 requireManageSession(url)——
+ * 必须已登录，且会话绑定的子配置与接口所属子配置一致。
+ * 因此这里不再校验请求体里的 secret（密钥只用于登录，以及对外的 /ban/* 机器接口）。
+ */
 function urlHandle_manage_query(req, res, from) {
     let playerName = req.params.player;
     let handle = HANDLES[from];
-    let secret = handle.secret;
-
-    if (!secret) {
-        res.status(403).send({ "error": "Secret key not configured for this endpoint" }).end();
-        return;
-    }
-
     let body = readBodyAccumulator(req, res);
     req.on('end', () => {
         try {
-            let data = JSON.parse(body.value);
-            if (!safeSecretEqual(data.secret, secret)) {
-                res.status(403).send({ "error": "Invalid secret key" }).end();
-                return;
-            }
+            // 鉴权已由路由门禁完成，Handler 内不再需要请求体字段；
+            // 这里只保留格式校验与体积限制（非法 JSON / 超大请求体一律拒绝）
+            JSON.parse(body.value);
 
             if (!checkName(playerName)) {
                 res.status(400).send({ "error": "Invalid player name" }).end();
@@ -902,7 +1607,12 @@ function urlHandle_manage_query(req, res, from) {
 
             let playerData = PlayerCaches[from].lookup(playerName);
             if (!playerData) {
-                res.status(404).send({ "error": "Player not found in cache" }).end();
+                // 说清"只是这个子配置的缓存里没有"：不同子配置用各自的 cache 目录，
+                // 玩家可能存在于其它子配置（或从未登录过），避免被误认为接口异常
+                res.status(404).send({
+                    "error": "该子配置的缓存中没有这个玩家（只查询当前子配置的 cache 目录）",
+                    "cause": "PLAYER_NOT_FOUND"
+                }).end();
                 return;
             }
 
@@ -916,27 +1626,16 @@ function urlHandle_manage_query(req, res, from) {
 
 function urlHandle_manage_list(req, res, from) {
     let handle = HANDLES[from];
-    let secret = handle.secret;
-
-    if (!secret) {
-        res.status(403).send({ "error": "Secret key not configured for this endpoint" }).end();
-        return;
-    }
-
     let body = readBodyAccumulator(req, res);
     req.on('end', () => {
         try {
             let data = JSON.parse(body.value);
-            if (!safeSecretEqual(data.secret, secret)) {
-                res.status(403).send({ "error": "Invalid secret key" }).end();
-                return;
-            }
 
             // 分页/搜索/排序参数（可选）；不传 pageSize 时返回全部（向后兼容）
             let page = parseInt(data.page) || 1;
             let pageSize = parseInt(data.pageSize) || 0;
             let search = (typeof data.search === 'string') ? data.search : '';
-            let field = ['name', 'uuid', 'from', 'all'].includes(data.field) ? data.field : 'all';
+            let field = ['name', 'uuid', 'from', 'oldname', 'all'].includes(data.field) ? data.field : 'all';
             let sort = ['name', 'uuid', 'from', 'lastLogin'].includes(data.sort) ? data.sort : 'name';
             let dir = parseInt(data.dir) || 1;
 
@@ -951,21 +1650,12 @@ function urlHandle_manage_list(req, res, from) {
 
 function urlHandle_manage_stats(req, res, from) {
     let handle = HANDLES[from];
-    let secret = handle.secret;
-
-    if (!secret) {
-        res.status(403).send({ "error": "Secret key not configured for this endpoint" }).end();
-        return;
-    }
-
     let body = readBodyAccumulator(req, res);
     req.on('end', () => {
         try {
-            let data = JSON.parse(body.value);
-            if (!safeSecretEqual(data.secret, secret)) {
-                res.status(403).send({ "error": "Invalid secret key" }).end();
-                return;
-            }
+            // 鉴权已由路由门禁完成，Handler 内不再需要请求体字段；
+            // 这里只保留格式校验与体积限制（非法 JSON / 超大请求体一律拒绝）
+            JSON.parse(body.value);
 
             let s = PlayerCaches[from].stats();
             res.send({ "success": true, ...s }).end();
@@ -978,21 +1668,12 @@ function urlHandle_manage_stats(req, res, from) {
 
 function urlHandle_manage_export(req, res, from) {
     let handle = HANDLES[from];
-    let secret = handle.secret;
-
-    if (!secret) {
-        res.status(403).send({ "error": "Secret key not configured for this endpoint" }).end();
-        return;
-    }
-
     let body = readBodyAccumulator(req, res);
     req.on('end', () => {
         try {
-            let data = JSON.parse(body.value);
-            if (!safeSecretEqual(data.secret, secret)) {
-                res.status(403).send({ "error": "Invalid secret key" }).end();
-                return;
-            }
+            // 鉴权已由路由门禁完成，Handler 内不再需要请求体字段；
+            // 这里只保留格式校验与体积限制（非法 JSON / 超大请求体一律拒绝）
+            JSON.parse(body.value);
 
             let players = PlayerCaches[from].export_players();
             res.send({ "success": true, "players": players, "count": players.length }).end();
@@ -1005,21 +1686,12 @@ function urlHandle_manage_export(req, res, from) {
 
 function urlHandle_manage_bans(req, res, from) {
     let handle = HANDLES[from];
-    let secret = handle.secret;
-
-    if (!secret) {
-        res.status(403).send({ "error": "Secret key not configured for this endpoint" }).end();
-        return;
-    }
-
     let body = readBodyAccumulator(req, res);
     req.on('end', () => {
         try {
-            let data = JSON.parse(body.value);
-            if (!safeSecretEqual(data.secret, secret)) {
-                res.status(403).send({ "error": "Invalid secret key" }).end();
-                return;
-            }
+            // 鉴权已由路由门禁完成，Handler 内不再需要请求体字段；
+            // 这里只保留格式校验与体积限制（非法 JSON / 超大请求体一律拒绝）
+            JSON.parse(body.value);
 
             let players = PlayerCaches[from].list_banned_players();
             res.send({ "success": true, "players": players, "count": players.length }).end();
@@ -1033,21 +1705,10 @@ function urlHandle_manage_bans(req, res, from) {
 function urlHandle_manage_modify(req, res, from) {
     let playerName = req.params.player;
     let handle = HANDLES[from];
-    let secret = handle.secret;
-
-    if (!secret) {
-        res.status(403).send({ "error": "Secret key not configured for this endpoint" }).end();
-        return;
-    }
-
     let body = readBodyAccumulator(req, res);
     req.on('end', () => {
         try {
             let data = JSON.parse(body.value);
-            if (!safeSecretEqual(data.secret, secret)) {
-                res.status(403).send({ "error": "Invalid secret key" }).end();
-                return;
-            }
 
             if (!checkName(playerName)) {
                 res.status(400).send({ "error": "Invalid player name" }).end();
@@ -1076,21 +1737,12 @@ function urlHandle_manage_modify(req, res, from) {
 function urlHandle_manage_delete(req, res, from) {
     let playerName = req.params.player;
     let handle = HANDLES[from];
-    let secret = handle.secret;
-
-    if (!secret) {
-        res.status(403).send({ "error": "Secret key not configured for this endpoint" }).end();
-        return;
-    }
-
     let body = readBodyAccumulator(req, res);
     req.on('end', () => {
         try {
-            let data = JSON.parse(body.value);
-            if (!safeSecretEqual(data.secret, secret)) {
-                res.status(403).send({ "error": "Invalid secret key" }).end();
-                return;
-            }
+            // 鉴权已由路由门禁完成，Handler 内不再需要请求体字段；
+            // 这里只保留格式校验与体积限制（非法 JSON / 超大请求体一律拒绝）
+            JSON.parse(body.value);
 
             if (!checkName(playerName)) {
                 res.status(400).send({ "error": "Invalid player name" }).end();
@@ -1110,27 +1762,182 @@ function urlHandle_manage_delete(req, res, from) {
         }
     });
 }
-function urlHandle_manage_rebuild_uuid(req, res, from) {
+function urlHandle_manage_player_info(req, res, from) {
+    let query = req.params.query;
     let handle = HANDLES[from];
-    let secret = handle.secret;
-
-    if (!secret) {
-        res.status(403).send({ "error": "Secret key not configured for this endpoint" }).end();
-        return;
-    }
-
     let body = readBodyAccumulator(req, res);
     req.on('end', () => {
         try {
-            let data = JSON.parse(body.value);
-            if (!safeSecretEqual(data.secret, secret)) {
-                res.status(403).send({ "error": "Invalid secret key" }).end();
+            let data = {};
+            if (body.value) {
+                try { data = JSON.parse(body.value) || {}; } catch (e) { data = {}; }
+            }
+            let q = String(query == null ? '' : query).trim();
+            if (q === '') {
+                res.status(400).send({ "error": "Missing player name or uuid" }).end();
                 return;
             }
+            resolvePlayerInfo(PlayerCaches[from], handle, q, data.from || null).then(r => {
+                if (r.error) {
+                    res.status(r.error === "PLAYER_NOT_FOUND" ? 404 : 400).send(Object.assign({ "success": false }, r)).end();
+                    return;
+                }
+                res.send(Object.assign({ "success": true }, r)).end();
+            }).catch(e => {
+                console.error(e);
+                res.status(500).send({ "error": "Failed to resolve player info" }).end();
+            });
+        } catch (e) {
+            console.error(e);
+            res.status(400).send({ "error": "Invalid request" }).end();
+        }
+    });
+}
 
-            let count = PlayerCaches[from].rebuildUUIDCache(false);
-            log(`[MANAGE] Rebuilt UUID cache table for <${handle.name || 'default'}>, current entries: ${count}`);
-            res.send({ "success": true, "count": count }).end();
+// 曾用名检索（改名搜索追踪）：命中曾用名时返回对应档案
+function urlHandle_manage_names(req, res, from) {
+    let query = req.params.query;
+    let handle = HANDLES[from];
+    let body = readBodyAccumulator(req, res);
+    req.on('end', () => {
+        try {
+            let data = {};
+            if (body.value) {
+                try { data = JSON.parse(body.value) || {}; } catch (e) { data = {}; }
+            }
+            let name = String(query == null ? '' : query).trim();
+            if (!checkName(name)) {
+                res.status(400).send({ "error": "Invalid player name" }).end();
+                return;
+            }
+            let cache = PlayerCaches[from];
+            let matched = cache.lookup_oldname(name);
+            let matches = matched.map(n => {
+                let h = cache.name_history(n);
+                if (h) h.records = cache.lookup(n) || null;
+                return h;
+            }).filter(h => h != null);
+            // 该名字本身是否也是个在用档案（"当前正在使用"），与曾用名命中并列返回
+            let current = cache.name_history(name);
+            if (current) current.records = cache.lookup(name) || null;
+            let note;
+            if (matches.length > 0 && current) note = "该名字既是以下档案的曾用名，也正在被另一个账号使用";
+            else if (matches.length > 0) note = "该名字是以下玩家的曾用名";
+            else if (current) note = "没有玩家以该名字作为曾用名，但该名字当前正被使用";
+            else note = "没有玩家以该名字作为曾用名，当前也没有账号使用该名字";
+            res.send({
+                "success": true,
+                "query": name,
+                "matched": matches.length > 0,
+                "matches": matches,
+                "currentNameOwner": current,
+                "note": note
+            }).end();
+        } catch (e) {
+            console.error(e);
+            res.status(400).send({ "error": "Invalid request" }).end();
+        }
+    });
+}
+
+// 贴图元信息（不作为图片代理）：管理端按返回的直链在浏览器侧渲染
+function urlHandle_manage_avatar(req, res, from) {
+    let query = req.params.query;
+    let handle = HANDLES[from];
+    let body = readBodyAccumulator(req, res);
+    req.on('end', () => {
+        try {
+            let data = {};
+            if (body.value) {
+                try { data = JSON.parse(body.value) || {}; } catch (e) { data = {}; }
+            }
+            let name = String(query == null ? '' : query).trim();
+            if (!checkName(name)) {
+                res.status(400).send({ "error": "Invalid player name" }).end();
+                return;
+            }
+            let cache = PlayerCaches[from];
+            let info = cache.lookup(name);
+            if (!info) {
+                res.status(404).send({ "error": "Player not found in cache" }).end();
+                return;
+            }
+            let textures = extractTextureInfo(info);
+            res.send({
+                "success": true,
+                "name": info.name == null ? name : info.name,
+                "uuid": info.uuid == null ? null : info.uuid,
+                "textures": textures,
+                "allowedImgSrc": avatarImgSrc(),
+                "allowedImgHosts": avatarAllowedHosts()
+            }).end();
+        } catch (e) {
+            console.error(e);
+            res.status(400).send({ "error": "Invalid request" }).end();
+        }
+    });
+}
+
+function urlHandle_manage_rebuild_uuid(req, res, from) {
+    let handle = HANDLES[from];
+    let body = readBodyAccumulator(req, res);
+    req.on('end', () => {
+        try {
+            // 鉴权已由路由门禁完成，Handler 内不再需要请求体字段；
+            // 这里只保留格式校验与体积限制（非法 JSON / 超大请求体一律拒绝）
+            JSON.parse(body.value);
+
+            let cache = PlayerCaches[from];
+            let before = Object.keys(cache.UUIDCache).length;
+            let count = cache.rebuildUUIDCache(false);
+            let dropped = Math.max(0, before - count);
+            log(`[MANAGE] Rebuilt UUID cache table for <${handle.name || 'default'}>, current entries: ${count}, dropped: ${dropped}`);
+            res.send({ "success": true, "count": count, "dropped": dropped }).end();
+        } catch (e) {
+            console.error(e);
+            res.status(400).send({ "error": "Invalid request" }).end();
+        }
+    });
+}
+
+// UUID 索引体检（可修复）：报告并清理幽灵条目 / 重复 uuid / 缺失映射
+function urlHandle_manage_check_uuid(req, res, from) {
+    let handle = HANDLES[from];
+    let body = readBodyAccumulator(req, res);
+    req.on('end', () => {
+        try {
+            let data = {};
+            if (body.value) {
+                try { data = JSON.parse(body.value) || {}; } catch (e) { data = {}; }
+            }
+
+            let cache = PlayerCaches[from];
+            // 修复前备份索引文件，便于人工回退
+            if (data.fix === true) {
+                let indexPath = path.join(cache.path, 'a.ud.json');
+                if (fs.existsSync(indexPath)) {
+                    try {
+                        fs.copyFileSync(indexPath, indexPath + '.bak');
+                    } catch (e) {
+                        console.error(e);
+                    }
+                }
+            }
+            let r = cache.verifyUUIDCache({ fix: data.fix === true });
+            log(`[MANAGE] Checked UUID index for <${handle.name || 'default'}>: stale ${r.stale.length}, duplicate ${r.duplicate.length}, missing ${r.missing.length}, repaired ${r.repaired}`);
+            res.send({
+                "success": true,
+                "fix": data.fix === true,
+                "repaired": r.repaired,
+                "entries": r.entries,
+                "staleCount": r.stale.length,
+                "duplicateCount": r.duplicate.length,
+                "missingCount": r.missing.length,
+                "stale": r.stale,
+                "duplicate": r.duplicate,
+                "missing": r.missing,
+                "nameConflicts": r.nameConflicts
+            }).end();
         } catch (e) {
             console.error(e);
             res.status(400).send({ "error": "Invalid request" }).end();
@@ -1140,21 +1947,10 @@ function urlHandle_manage_rebuild_uuid(req, res, from) {
 
 function urlHandle_manage_batch_delete(req, res, from) {
     let handle = HANDLES[from];
-    let secret = handle.secret;
-
-    if (!secret) {
-        res.status(403).send({ "error": "Secret key not configured for this endpoint" }).end();
-        return;
-    }
-
     let body = readBodyAccumulator(req, res);
     req.on('end', () => {
         try {
             let data = JSON.parse(body.value);
-            if (!safeSecretEqual(data.secret, secret)) {
-                res.status(403).send({ "error": "Invalid secret key" }).end();
-                return;
-            }
 
             if (!Array.isArray(data.players) || data.players.length <= 0) {
                 res.status(400).send({ "error": "Missing players array" }).end();
@@ -1182,21 +1978,10 @@ function urlHandle_manage_batch_delete(req, res, from) {
 
 function urlHandle_manage_batch_unban(req, res, from) {
     let handle = HANDLES[from];
-    let secret = handle.secret;
-
-    if (!secret) {
-        res.status(403).send({ "error": "Secret key not configured for this endpoint" }).end();
-        return;
-    }
-
     let body = readBodyAccumulator(req, res);
     req.on('end', () => {
         try {
             let data = JSON.parse(body.value);
-            if (!safeSecretEqual(data.secret, secret)) {
-                res.status(403).send({ "error": "Invalid secret key" }).end();
-                return;
-            }
 
             if (!Array.isArray(data.players) || data.players.length <= 0) {
                 res.status(400).send({ "error": "Missing players array" }).end();
@@ -1230,11 +2015,17 @@ app.get('/', function (req, res) {
 })
 // 管理界面和管理API注册到 manageApp（独立管理服务器）或 app（主服务器）
 let uiApp = manageApp || app;
-const MANAGE_CSP = "default-src 'self' blob:; script-src 'unsafe-inline'; style-src 'unsafe-inline'; img-src 'self' data: blob:; connect-src 'self'; frame-ancestors 'none'; base-uri 'self'; form-action 'self'";
+// img-src：启用反代时贴图全部同源下发，无需放开外部域名；关闭反代时平面贴图直连上游，需按配置放开
+function manageCsp() {
+    let imgSrc = skinProxyEnabled ? "img-src 'self' data: blob:" : avatarImgSrc();
+    return "default-src 'self' blob:; script-src 'self' 'unsafe-inline'; style-src 'self' 'unsafe-inline'; "
+        + imgSrc
+        + "; connect-src 'self'; frame-ancestors 'none'; base-uri 'self'; form-action 'self'";
+}
 
 // 登录门控：未登录（无有效会话 Cookie）只返回登录页，登录后才能访问管理主页面
 uiApp.get(manageUrl, manageSecurityHeaders, function (req, res) {
-    res.setHeader('Content-Security-Policy', MANAGE_CSP);
+    res.setHeader('Content-Security-Policy', manageCsp());
     let session = getAdminSession(req);
     if (!session) {
         res.sendFile(path.join(WEB_PUBLIC_DIR, 'login.html'));
@@ -1293,6 +2084,8 @@ uiApp.get(manageUrl + '/api/session', manageSecurityHeaders, function (req, res)
     let idx = HANDLES.findIndex(h => h.url === session.m);
     res.send({ "loggedIn": true, "url": session.m, "name": (idx >= 0 ? (HANDLES[idx].name || 'default') : session.m) }).end();
 })
+// 登录页渲染子配置下拉框时必须调用，因此这个接口保持公开：只暴露子配置的 url 与名称，
+// 不含任何密钥或玩家数据。
 uiApp.get('/api/methods', manageSecurityHeaders, function (req, res) {
     let methods = HANDLES.map((handle, idx) => ({
         url: handle.url,
@@ -1300,6 +2093,64 @@ uiApp.get('/api/methods', manageSecurityHeaders, function (req, res) {
     }));
     res.send(methods).end();
 })
+// 面板自用的 3D 预览脚本（three.js + skinview3d 打包产物，同源加载）
+// 用 no-cache + ETag 让浏览器每次校验：升级后立即生效，未变更则 304
+uiApp.get('/vendor/mcviewer.js', manageSecurityHeaders, function (req, res) {
+    res.setHeader('Content-Type', 'application/javascript; charset=utf-8');
+    res.setHeader('Cache-Control', 'no-cache');
+    res.sendFile(path.join(WEB_PUBLIC_DIR, 'vendor', 'mcviewer.js'));
+})
+// 皮肤贴图反代：仅管理端，且必须是已登录的管理会话 + 白名单域名 + 图片
+uiApp.get(manageUrl + '/skin-proxy', manageSecurityHeaders, function (req, res) {
+    // 处理函数是异步的：必须兜住 Promise 拒绝，否则会变成未处理拒绝（旧版本会直接退出进程）
+    handleSkinProxy(req, res).catch(e => {
+        console.error(e);
+        if (!res.headersSent) res.status(500).send({ "error": "Internal error" }).end();
+    });
+})
+// 管理面板"角色信息查询"用：每个子配置可用的来源（皮肤站）列表。需要登录。
+uiApp.get('/api/sources', manageSecurityHeaders, requireManageSession(null), function (req, res) {
+    let all = [];
+    let seenAll = Object.create(null);
+    for (let api of URL_APIS) {
+        if (!api || !api.id || seenAll[api.id]) continue;
+        seenAll[api.id] = true;
+        all.push({ id: api.id, name: api.name || api.id });
+    }
+    let byUrl = Object.create(null);
+    for (let handle of HANDLES) {
+        let list = [];
+        for (let id of (handle.handles || [])) {
+            let api = lookupApi(id);
+            if (api) list.push({ id: api.id, name: api.name || api.id });
+        }
+        byUrl[handle.url] = { name: handle.name || 'default', sources: list };
+    }
+    res.send({ all: all, handles: byUrl }).end();
+})
+// 管理接口是 POST-only。浏览器直接访问（在地址栏里敲 /xxx/manage/query/名字）会走 GET，
+// 若不专门处理就会落到 404 兜底并被记成 [UNKNOWN]，很容易被误判为"接口不存在"。
+// 这里对管理路径的非 POST 请求给出明确的 405 与提示，且不再记录成 [UNKNOWN]。
+function manageMethodHint(req, res, next) {
+    if (req.method === 'POST' || req.method === 'OPTIONS') { next(); return; }
+    let pathname = req.path || '';
+    // 管理面板自身的路由（{manage_url}、{manage_url}/skin-proxy、{manage_url}/api/*）不是 POST-only
+    if (typeof manageUrl === 'string' && manageUrl !== ''
+        && (pathname === manageUrl || pathname.indexOf(manageUrl + '/') === 0)) {
+        next();
+        return;
+    }
+    let isManagePath = HANDLES.some(h => typeof h.url === 'string' && h.url !== '' && (
+        pathname === h.url + '/manage' || pathname.indexOf(h.url + '/manage/') === 0 || pathname.indexOf(h.url + '/ban/') === 0));
+    if (!isManagePath) { next(); return; }
+    log(`[MANAGE] ${req.method} ${req.url} rejected with 405 (management API is POST-only)`);
+    res.status(405).set('Allow', 'POST').send({
+        "error": "Method Not Allowed",
+        "errorMessage": "管理接口只接受 POST：请通过管理面板操作，或先 POST {manage_url}/login 取得会话 Cookie 后再调用",
+        "method": req.method,
+        "path": pathname
+    }).end();
+}
 // 如果启用了独立管理服务器，为其添加 favicon 和 404 处理
 if (manageApp) {
     manageApp.use(manageSecurityHeaders);
@@ -1307,13 +2158,14 @@ if (manageApp) {
         res.sendFile(path.join(WEB_PUBLIC_DIR, 'index.html'));
     })
     manageApp.get("/favicon.ico", function (req, res) { res.end() })
+    manageApp.use(manageMethodHint);
     manageApp.get('*', function (req, res) {
         log("[UNKNOWN] " + (req.ip) + " -> " + req.url);
-        res.sendFile(path.join(WEB_PUBLIC_DIR, '404.html'));
+        res.status(404).sendFile(path.join(WEB_PUBLIC_DIR, '404.html'));
     });
     manageApp.post("*", function (req, res) {
         log("[UNKNOWN] " + (req.ip) + " -> " + req.url);
-        res.sendFile(path.join(WEB_PUBLIC_DIR, '404.html'));
+        res.status(404).sendFile(path.join(WEB_PUBLIC_DIR, '404.html'));
     })
     manageApp.use((err, req, res, next) => {
         console.error(err.stack);
@@ -1323,16 +2175,18 @@ if (manageApp) {
 }
 app.get("/favicon.ico", function (req, res) { res.end() })
 
+app.use(manageMethodHint);
+
 app.get('*', function (req, res) {
     // log('404 handler..')
     // log(req.url);
     log("[UNKNOWN] " + (req.ip) + " -> " + req.url);
-    res.sendFile(path.join(WEB_PUBLIC_DIR, '404.html'));
+    res.status(404).sendFile(path.join(WEB_PUBLIC_DIR, '404.html'));
 });
 
 app.post("*", function (req, res) {
     log("[UNKNOWN] " + (req.ip) + " -> " + req.url);
-    res.sendFile(path.join(WEB_PUBLIC_DIR, '404.html'));
+    res.status(404).sendFile(path.join(WEB_PUBLIC_DIR, '404.html'));
 })
 
 // HTML 处理结束
@@ -1350,12 +2204,17 @@ if (manageApp) {
     initManageHttps();
     listenManageServer();
     log(`Management server is listening to ${managePort} port${manageHost ? " on " + manageHost : ""}${manageHttpsOptions ? " (HTTPS)" : ""}.`);
+} else {
+    // 未配置 manage_port 时管理路由会挂在对外登录端口上：管理面板与 /ban API 会随登录端口一起暴露
+    log("[WARN] manage_port is not set: management routes (/manage/*, /ban/*) are served on the public login port. It is recommended to set manage_port and keep manage_host at 127.0.0.1.");
 }
 
 function reloadConfig() {
     log("Loading the config ...")
     globleConfig.reload();
     PUSH_LOGINMETHOD_PLAYERS = globleConfig.get("push", { "handles": [] }).handles;
+    // 图片白名单与来源表依赖配置，必须在任何 return 之前刷新
+    refreshAvatarConfig();
 
     try {
         if (server != null)
@@ -1389,10 +2248,28 @@ function reloadConfig() {
     log("服务器启动成功！");
     log("重新加载服务器配置文件。")
 }
+// 重新读取与图片白名单相关的配置（skinDomains / apis / avatar_domains）
+function refreshAvatarConfig() {
+    SkinDomains = globleConfig.get("skinDomains", ["127.0.0.1"]);
+    URL_APIS = globleConfig.get("apis", {});
+    AvatarDomains = parseAvatarDomains(globleConfig.get("avatar_domains", []));
+    // 皮肤贴图反代：默认启用（WebGL 预览要求同源/允许跨站的贴图）
+    skinProxyEnabled = globleConfig.get("skin_proxy", true) !== false;
+    // 配置变化会使缓存失效（CSP 头每请求重建，因此无需重启即可生效）
+    avatarHostsCache = null;
+    avatarImgSrcCache = null;
+    let hosts = avatarAllowedHosts();
+    log(`[MANAGE] 图片白名单（CSP img-src）共 ${hosts.length} 个域名: ${hosts.join(', ')}`);
+    if (AvatarDomains.length > 0) {
+        log(`[MANAGE] 其中来自 avatar_domains 配置: ${AvatarDomains.join(', ')}`);
+    }
+    log(`[MANAGE] 皮肤贴图反代: ${skinProxyEnabled ? '启用' : '关闭'}（skin_proxy）`);
+}
 
 process.on('unhandledRejection', (err) => {
-    console.error(err instanceof Error ? err.message : err);
-    process.exit(-1);
+    // 不能因为单个请求的未处理拒绝就退出进程：那会让所有玩家的登录一起中断。
+    // 这里只记录（旧行为是 process.exit(-1)，一次畸形请求即可打掉整个登录服务）。
+    console.error("[UNHANDLED_REJECTION] " + (err instanceof Error ? (err.stack || err.message) : String(err)));
 });
 const HELPINFO = "\n--------------------------------\nhelp - Show the help message\nstop - Stop & Exit\nreload - Reload the config file.\nban <player> <time> - ban a player\n--------------------------------";
 function runCommand() {

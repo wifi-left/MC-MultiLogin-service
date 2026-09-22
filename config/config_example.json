@@ -16,6 +16,7 @@
     "skinDomains": [
         "littleskin.cn"
     ],
+    "avatar_domains": [],
     "apis": [
         {
             "id": "littleskin",
@@ -56,5 +57,7 @@
         "VERIFY_FAILED": "验证失败，你应当通过 {name} 进入",
         "LOGIN_TOO_FAST": "你的登录过快，请稍后再试",
         "BAN_UNTIL": "解封时间: "
-    }
+    },
+    "skin_proxy": true,
+    "ban_api": false
 }
