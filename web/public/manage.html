@@ -1178,6 +1178,7 @@
             <button class="tab" data-tab="remote">🌐 远程信息</button>
             <button class="tab" data-tab="alias">🕓 曾用名追踪</button>
             <button class="tab" data-tab="uuid">🆔 UUID 互转换</button>
+            <button class="tab" data-tab="conflicts">⚠ 用户名冲突</button>
             <button class="tab" data-tab="ban">🚫 封禁管理</button>
             <button class="tab" data-tab="modify">✏️ 缓存修改</button>
         </nav>
@@ -1285,8 +1286,8 @@
                 <form id="queryForm">
                     <div class="form-row">
                         <div class="field">
-                            <label for="queryPlayerName">玩家名称 / UUID</label>
-                            <input type="text" id="queryPlayerName" placeholder="输入玩家名称，或 32 位 UUID（可带横线）">
+                            <label for="queryPlayerName">玩家名称</label>
+                            <input type="text" id="queryPlayerName" placeholder="输入玩家名称（本地缓存按名称查询）">
                         </div>
                         <button class="btn" type="submit">查询缓存</button>
                         <button class="btn secondary" type="button" id="queryToRemote">🌐 查询远程信息</button>
@@ -1381,6 +1382,23 @@
                 </p>
                 <div class="result-box" id="uuidResult"></div>
                 <div id="uuidFormsWrap" class="empty">输入 UUID 或玩家名后在此显示各种等价形式</div>
+            </div>
+        </section>
+
+        <!-- ============ 用户名冲突 ============ -->
+        <section id="tab-conflicts" class="tab-content">
+            <div class="card">
+                <h3>用户名冲突 <span class="spacer"></span><span class="alias-note">仅展示，不做任何修改</span></h3>
+                <p class="hint">
+                    这里列出<strong>某个名字既是在用档案的当前名、又被另一个档案记为曾用名</strong>的情况——通常是名字被回收（原主人改名）后又被别人注册，
+                    属于正常现象，<strong>不影响登录与改名判定</strong>，只影响「曾用名追踪」页的展示（那一页会把两侧并列显示）。
+                    本页<strong>只展示、不提供修复</strong>：如果确认某个名字是脏数据（本来不该出现在那份档案的 <code>old_names</code> 里），
+                    可以到「缓存修改」页把该档案的 <code>old_names</code> 手工删掉，再回来刷新。
+                </p>
+                <div class="form-row">
+                    <button class="btn secondary" type="button" id="conflictsRefresh">刷新</button>
+                </div>
+                <div id="conflictsWrap" class="empty">点击「刷新」加载用户名冲突清单</div>
             </div>
         </section>
 
@@ -1835,6 +1853,8 @@
                 query: () => { },
                 remote: () => { },
                 alias: () => { },
+                uuid: () => { },
+                conflicts: loadAliasConflicts,
                 ban: loadBans,
                 modify: () => { },
             };
@@ -2166,6 +2186,7 @@
             const dup = preview.duplicateCount || 0;
             const miss = preview.missingCount || 0;
             if (stale + dup + miss === 0) {
+                // 曾用名冲突不算问题（名字被回收后又被注册属正常），它只在「⚠ 用户名冲突」页展示
                 toast(`UUID 表正常，当前索引项：${preview.entries}`, 'success');
                 return;
             }
@@ -2512,6 +2533,51 @@
                 setLoading(btn, false);
             }
         }
+
+        // 用户名冲突清单（只展示，不修复）：某名字既是在用档案的当前名，又被另一个档案记为曾用名
+        async function loadAliasConflicts() {
+            const wrap = $('conflictsWrap');
+            wrap.innerHTML = '';
+            wrap.classList.remove('empty');
+            wrap.textContent = '加载中…';
+            let res = null;
+            try {
+                res = await manageFetch('/manage/alias-conflicts', {});
+            } catch (e) {
+                wrap.textContent = '加载失败：' + e.message;
+                return;
+            }
+            const list = res.conflicts || [];
+            wrap.innerHTML = '';
+            if (list.length === 0) {
+                wrap.classList.add('empty');
+                wrap.textContent = '没有检测到用户名冲突（没有"在用名字被别人记为曾用名"的情况）';
+                return;
+            }
+            wrap.appendChild(h('div', { class: 'alias-note', text: `共 ${list.length} 条（只展示，不提供修复）` }));
+            list.forEach(c => {
+                const box = h('div', { class: 'skin-panel' });
+                box.appendChild(h('h3', null, h('span', { text: '冲突名字 ' + c.name })));
+                const rows = [
+                    ['在用档案', (c.current && c.current.name) || c.name],
+                    ['在用档案 UUID', c.current && c.current.uuid ? fmtUuid(c.current.uuid) : ''],
+                    ['在用档案来源', (c.current && c.current.from) || ''],
+                    ['在用档案最后登录', c.current && c.current.lastLogin ? fmtTime(c.current.lastLogin) : ''],
+                    ['记为曾用名的档案', (c.owner && c.owner.name) || ''],
+                    ['该档案 UUID', c.owner && c.owner.uuid ? fmtUuid(c.owner.uuid) : ''],
+                    ['该档案来源', (c.owner && c.owner.from) || ''],
+                    ['该档案最后登录', c.owner && c.owner.lastLogin ? fmtTime(c.owner.lastLogin) : '']
+                ];
+                box.appendChild(buildParsedTable(rows));
+                box.appendChild(h('div', { class: 'skin-panel' },
+                    h('button', { class: 'btn secondary', onclick: () => viewPlayer(c.current ? c.current.name : c.name) }, '查看在用档案（本地缓存）'),
+                    h('button', { class: 'btn secondary', style: 'margin-left:8px', onclick: () => viewPlayer(c.owner ? c.owner.name : '') }, '查看曾用名档案（本地缓存）'),
+                    h('button', { class: 'btn secondary', style: 'margin-left:8px', onclick: () => gotoAlias(c.name) }, '用该名字反查曾用名')
+                ));
+                wrap.appendChild(box);
+            });
+        }
+        $('conflictsRefresh').addEventListener('click', () => loadAliasConflicts());
 
         function renderQueryInfo(info, query) {
             lastInfo = info;

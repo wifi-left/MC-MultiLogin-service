@@ -1,9 +1,13 @@
 const fs = require('fs');
 
-const { log } = require('./utils.js');
+const { log, globleConfig } = require('./utils.js');
 
 // 改名级联上限：一次登录处理中最多沿 uuid 链自动改名几次，超出即拒绝（防止上游异常导致无限递归）
 const MAX_RENAME_CHAIN = 3;
+// 本次进程内已提示过的"曾用名冲突"（按 缓存目录+名字+档案 去重）：
+// 索引每次启动都按磁盘重建、同一目录还可能被多个子配置共用，不去重就会重复刷屏
+const aliasConflictLogged = new Set();
+const aliasConflictSummaryLogged = new Set();
 
 function checkName(name) {
     // 必须是字符串：调用方可能把索引里的非字符串值（如命中 Object.prototype 的属性）传进来
@@ -85,6 +89,23 @@ function class_PlayerCache(path) {
         }
         return removed;
     }
+    // 曾用名冲突清单：某名字既是在用档案的当前名，又被另一个档案记为曾用名
+    // （名字被回收后又被重新注册）。只读内存索引 playersMeta，不读盘、不访问上游。
+    // 返回 [{ name, owner: {name,uuid,from,lastLogin}, current: {name,uuid,from,lastLogin} }]
+    this.aliasConflicts = function () {
+        let side = m => (m ? { name: m.name, uuid: m.uuid == null ? null : m.uuid, from: m.from == null ? null : m.from, lastLogin: m.lastLogin == null ? null : m.lastLogin } : null);
+        let out = [];
+        for (let playerName of Object.keys(this.playersMeta)) {
+            let owner = this.playersMeta[playerName];
+            for (let oldName of normalizeOldNames(owner.old_names)) {
+                if (oldName === playerName) continue;
+                let current = this.playersMeta[oldName];
+                if (!current) continue;
+                out.push({ name: oldName, owner: side(owner), current: side(current) });
+            }
+        }
+        return out;
+    }
     this.rebuildUUIDCacheFromFiles = function (overwriteConflict = false) {
         let changed = false;
         // 玩家元数据索引：避免列表/封禁/统计每次全量读取缓存文件
@@ -116,12 +137,8 @@ function class_PlayerCache(path) {
                             if (!this.oldNameIndex[k]) this.oldNameIndex[k] = [];
                             if (!this.oldNameIndex[k].includes(playerName)) this.oldNameIndex[k].push(playerName);
                         }
-                        // 曾用名同时也是另一个账号的当前名：两份档案同名，属于需要人工确认的冲突
-                        for (let oldName of this.playersMeta[playerName].old_names) {
-                            if (oldName !== playerName && this.playersMeta[oldName]) {
-                                log(`[UUID_CACHE] Alias conflict: <${oldName}> is used as current name of <${oldName}> and as an old name of <${playerName}>`);
-                            }
-                        }
+                        // 曾用名冲突在下方的"整表扫描"里统一检测（必须等 playersMeta 全部建好，
+                        // 否则结果会依赖文件遍历顺序，漏报 owner 排在前面的一半）
                     }
                     if (!data || !data.uuid) continue;
                     let keys = getUUIDKeys(data.uuid);
@@ -141,6 +158,23 @@ function class_PlayerCache(path) {
             }
         } catch (e) {
             console.error(e);
+        }
+        // 曾用名同时也是另一个在用档案的当前名（名字被回收后又被别人占用）。
+        // 这是常见现象，只影响"曾用名追踪"的展示、不参与登录/改名判定，所以默认只按目录汇总一行，
+        // 逐条明细交给 debug 或管理面板的「用户名冲突」页（调 aliasConflicts() 取同一份清单）。
+        // 注意必须等 playersMeta 全部建好后再检测，否则结果会依赖文件遍历顺序、漏报一半。
+        let conflicts = this.aliasConflicts();
+        if (conflicts.length > 0 && !aliasConflictSummaryLogged.has(this.path)) {
+            aliasConflictSummaryLogged.add(this.path);
+            log(`[UUID_CACHE] Alias conflicts in ${this.path}: ${conflicts.length}（曾用名与在用档案同名，通常是名字被回收后又被占用；清单见管理面板"用户名冲突"页，逐条明细可设 debug: true）`);
+        }
+        if (conflicts.length > 0 && globleConfig.get("debug", false)) {
+            for (let c of conflicts) {
+                let key = this.path + '|' + c.name + '|' + c.owner.name;
+                if (aliasConflictLogged.has(key)) continue;
+                aliasConflictLogged.add(key);
+                log(`[UUID_CACHE] Alias conflict: <${c.name}> is used as current name of <${c.name}> and as an old name of <${c.owner.name}>`);
+            }
         }
         if (changed) {
             log(`[UUID_CACHE] Repaired UUID index for cache path ${this.path}`);
@@ -226,14 +260,13 @@ function class_PlayerCache(path) {
         let stale = [];
         let duplicate = [];
         let missing = [];
-        let nameConflicts = [];
         let uuidOwner = newDict();
         let files = [];
         try {
             files = fs.readdirSync(this.path);
         } catch (e) {
             console.error(e);
-            return { stale, duplicate, missing, nameConflicts, repaired: false, entries: 0 };
+            return { stale, duplicate, missing, repaired: false, entries: 0 };
         }
         for (let file of files) {
             if (!file.endsWith('.json') || file === 'a.ud.json') continue;
@@ -246,11 +279,7 @@ function class_PlayerCache(path) {
                 continue;
             }
             if (!data || typeof data !== 'object') continue;
-            for (let oldName of normalizeOldNames(data['old_names'])) {
-                if (this.playersMeta[oldName]) {
-                    nameConflicts.push({ name: oldName, owner: playerName, current: this.playersMeta[oldName].name });
-                }
-            }
+            // 曾用名冲突只在最后统一算（aliasConflicts()，只读内存索引），这里不再逐个文件判定
             if (!data.uuid) continue;
             let target = normalizeUUID(data.uuid);
             if (uuidOwner[target] == undefined) {
@@ -325,7 +354,6 @@ function class_PlayerCache(path) {
             stale,
             duplicate,
             missing,
-            nameConflicts,
             repaired,
             entries: Object.keys(this.UUIDCache).length
         };

@@ -546,6 +546,7 @@ for (let i = 0; i < HANDLES.length; i++) {
     // Management API endpoints —— 全部要求管理面板已登录（会话按子配置绑定）
     let gate = requireManageSession(url);
     mApp.post(`${url}/manage/ban/:target/:time`, manageLimiter, gate, function (req, res) { urlHandle_manage_ban(req, res, idx) });
+    mApp.post(`${url}/manage/alias-conflicts`, manageLimiter, gate, function (req, res) { urlHandle_manage_alias_conflicts(req, res, idx) });
     mApp.post(`${url}/manage/query/:player`, manageLimiter, gate, function (req, res) { urlHandle_manage_query(req, res, idx) });
     mApp.post(`${url}/manage/list`, manageLimiter, gate, function (req, res) { urlHandle_manage_list(req, res, idx) });
     mApp.post(`${url}/manage/bans`, manageLimiter, gate, function (req, res) { urlHandle_manage_bans(req, res, idx) });
@@ -1456,6 +1457,21 @@ function applyBan(cache, playerName, time, reason) {
 }
 // 管理面板封禁/解封（走登录会话，面板不再调用对外的 /ban/* 接口）
 // body 可选：{ reason, type: 'name' | 'uuid' }，不传 type 时按目标形态自动识别
+// 用户名冲突清单（面板"用户名冲突"页）：名字既是在用档案的当前名，又被另一个档案记为曾用名。
+// 只读内存索引、不读盘、不访问上游；**仅供查看，不提供修复动作**（是否清理由人工决定）。
+function urlHandle_manage_alias_conflicts(req, res, from) {
+    let body = readBodyAccumulator(req, res);
+    req.on('end', () => {
+        try {
+            JSON.parse(body.value);
+            let conflicts = PlayerCaches[from].aliasConflicts();
+            res.send({ "success": true, "count": conflicts.length, "conflicts": conflicts }).end();
+        } catch (e) {
+            console.error(e);
+            res.status(400).send({ "error": "Invalid request" }).end();
+        }
+    });
+}
 function urlHandle_manage_ban(req, res, from) {
     let target = String(req.params.target == null ? '' : req.params.target).trim();
     let time = parseInt(req.params.time);
@@ -1622,6 +1638,15 @@ function urlHandle_manage_query(req, res, from) {
             // 这里只保留格式校验与体积限制（非法 JSON / 超大请求体一律拒绝）
             JSON.parse(body.value);
 
+            // 本地缓存按"名称"存文件，认不出 UUID：直接说清楚，免得像"这个玩家不存在"那样误导
+            if (isUUIDLike(playerName)) {
+                res.status(400).send({
+                    "error": "本地缓存查询只支持玩家名，不支持 UUID",
+                    "cause": "UUID_NOT_SUPPORTED",
+                    "hint": "按 UUID 查请用「远程信息」（/manage/player-info）或「UUID 互转换」"
+                }).end();
+                return;
+            }
             if (!checkName(playerName)) {
                 res.status(400).send({ "error": "Invalid player name" }).end();
                 return;
@@ -1958,7 +1983,6 @@ function urlHandle_manage_check_uuid(req, res, from) {
                 "stale": r.stale,
                 "duplicate": r.duplicate,
                 "missing": r.missing,
-                "nameConflicts": r.nameConflicts
             }).end();
         } catch (e) {
             console.error(e);
