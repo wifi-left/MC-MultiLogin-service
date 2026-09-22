@@ -173,7 +173,7 @@ curl -b cookie.txt -X POST 'http://127.0.0.1:25601/login/my/manage/list' \
 ```
 
 - `POST {url}/manage/query/{player}` — 查询玩家缓存（请求体可留空 `{}`）
-- `POST {url}/manage/player-info/{query}` — **查询角色真实信息**（请求体：`{"from": "可选来源id"}`）。`query` 支持玩家名或 UUID（32 位，可带横线）。解析顺序为**本地缓存记录的来源 → 所选子配置的 `handles` 顺序**（可用 `from` 显式指定来源）。返回 `name`、`uuid`、`resolvedFrom`/`fromName`、`lookupChain`（各来源命中情况）、`textures`（`skin.url`/`skin.model`/`cape.url`，已把 http 贴图地址升级为 https）、`history`（曾用名链）、`cache`（本地档案）、`warnings`。结果缓存 60 秒，避免反复打上游。错误：`PLAYER_NOT_FOUND`（404）、`SOURCE_UNSUPPORTED`（400）
+- `POST {url}/manage/player-info/{query}` — **查询角色真实信息**（请求体：`{"from": "可选来源id"}`）。`query` 支持玩家名或 UUID（32 位，可带横线）。解析顺序为**显式指定的 `from` → 本地缓存记录的来源 → 所选子配置的 `handles` 顺序**（依次尝试，命中即停）。**查询形态跟随输入**：输入玩家名就按名字查（`POST /api/profiles/minecraft`，由该来源自行解析名字→UUID），输入 UUID 就按 UUID 查；不会拿本地档案里的 UUID 去代问来源（那会导致所选来源永远查不到）。若名字在所有来源都没命中，会再用本地档案记录的 UUID 兜底查一遍（兼容改名），此时 `resolvedVia` 为 `uuid` 并在 `warnings` 中提示。返回 `name`、`uuid`、`resolvedFrom`/`fromName`、`queryVia`/`resolvedVia`（按名字还是按 UUID 命中）、`lookupChain`（各来源命中情况，每项含 `via`）、`textures`（`skin.url`/`skin.model`/`cape.url`，已把 http 贴图地址升级为 https）、`history`（曾用名链）、`cache`（本地档案）、`warnings`。结果缓存 60 秒，避免反复打上游。错误：`PLAYER_NOT_FOUND`（404）、`SOURCE_UNSUPPORTED`（400）
 - `POST {url}/manage/names/{query}` — **曾用名反查（改名搜索追踪）**（请求体可留空）。返回 `matches`（以该名字作为曾用名的档案，含当前名、uuid、来源、`old_names`、`oldest` 最早记录名、`history`）与 `currentNameOwner`（该名字是否本身是个在用档案）
 - `POST {url}/manage/avatar/{player}` — 返回本地档案解析出的贴图元信息与 `allowedImgSrc` / `allowedImgHosts`（当前图片白名单），便于面板排查图片加载失败（请求体可留空）
 - `GET {manage_url}/skin-proxy?url={贴图地址}` — **皮肤贴图反代**（需携带有效管理会话 Cookie；不再支持 `?secret=` 查询串，避免密钥进入日志与浏览器历史）。仅接受 `https`、且主机必须在白名单内（`skinDomains` / `apis[].root` / `avatar_domains` / Mojang 官方贴图域），只回传图片（PNG/JPEG/GIF/WEBP，解压后 ≤4MB），响应头带 `Content-Security-Policy: sandbox`。可用 `skin_proxy: false` 整体关闭
@@ -198,6 +198,8 @@ curl -b cookie.txt -X POST 'http://127.0.0.1:25601/login/my/manage/list' \
 
 - **🔍 缓存查询**：只读本地档案（`/manage/query`），**不会访问任何上游**；页面打开与切换都不会触发远程请求。
 - **🌐 远程信息**：**必须手动点击"查询远程信息"** 才会向配置的来源发起请求。返回当前名称、UUID、解析/档案来源、皮肤模型（classic/slim）、披风、查询链、曾用名与最早记录名、最后登录、封禁状态、IP，并渲染皮肤与披风。
+- **🆔 UUID 互转换**：把同一个 UUID 在**各种等价形式之间互转**：十六进制（带/不带横线）、高/低 64 位 long、两个 long、整型数组 `[I; a, b, c, d]`（NBT / 存档格式）、四个整数的逗号列表（插件与命令常用）。「输入格式」可选择 自动识别 / 十六进制 / 两个 long / 整型数组 / 玩家名：选「两个 long」会多出一个输入框，可分别填高64位与低64位（单个 long 不足以还原 UUID，会直接提示而不是拿去当玩家名查）。输入任意一种形式就能得到全部形式，每行都可一键复制；输入玩家名时会向配置的来源查询真实 UUID（仅点击按钮时请求，结果缓存 60 秒）。**UUID 形式的输入全程在浏览器本地转换，不会发出任何请求。**
+  - 面板里凡是显示 UUID 的地方（缓存查询、远程信息、曾用名追踪的结果表格）该行右侧都有「转换」按钮，点击即跳到本页并自动转换。
 - **🕓 曾用名追踪**：用历史用户名反查档案（`/manage/names`）。结果分两部分并列展示，两部分可能同时出现：
   - **① 曾用名命中**：把所有以该名字作为曾用名的档案**全部列出**（可能多个）；
   - **② 当前正在使用该名字的账号**：该名字本身若也是个在用档案，同样列出。
@@ -249,6 +251,7 @@ curl -b cookie.txt -X POST 'http://127.0.0.1:25601/login/my/manage/list' \
   - 或开启 `manage_trust_proxy: true`，让服务端也接受 `X-Forwarded-Host` 的比对（仅在管理端口确实位于可信代理之后时开启）
   被拒绝时服务端会打印 `[MANAGE] Rejected cross-site request ... (Origin: ... Host: ... Sec-Fetch-Site: ...)` 到日志，可按其中取值定位。
 - 使用足够长且随机的 `secret`，不要使用示例中的 `your_secret_key_here`。
+- 管理接口的失败调用只返回通用错误（`Unauthorized` / `Forbidden` / `Method Not Allowed`），不在响应体里透露鉴权方式、部署建议或"如何开启某功能"；完整原因记在日志里：`[MANAGE][401] Unauthorized (no valid admin session) - POST /login/a/manage/list from 1.2.3.4`（状态码 + 原因 + 方法 + 路径 + 来源 IP），登录失败记 `Login failed (...)`，便于发现有人在试探。面板自己的提示文案不受影响。
 - 管理面板中，密钥默认仅保存在当前会话（`sessionStorage`），关闭页面即清除；勾选"记住密钥"后才会保存在本地存储中。请勿在公共电脑上勾选。
 - 管理面板所有动态内容均经过转义处理，防止来自玩家数据的 XSS 注入；管理接口也均设置了防点击劫持（`X-Frame-Options`）、CSP（`frame-ancestors 'none'`）等安全响应头。
 

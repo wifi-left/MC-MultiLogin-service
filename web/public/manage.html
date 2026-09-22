@@ -1177,6 +1177,7 @@
             <button class="tab" data-tab="query">🔍 缓存查询</button>
             <button class="tab" data-tab="remote">🌐 远程信息</button>
             <button class="tab" data-tab="alias">🕓 曾用名追踪</button>
+            <button class="tab" data-tab="uuid">🆔 UUID 互转换</button>
             <button class="tab" data-tab="ban">🚫 封禁管理</button>
             <button class="tab" data-tab="modify">✏️ 缓存修改</button>
         </nav>
@@ -1342,6 +1343,44 @@
                 </form>
                 <div class="result-box" id="aliasResult"></div>
                 <div id="aliasWrap" class="empty">输入曾用名后在此显示命中的档案</div>
+            </div>
+        </section>
+
+        <!-- ============ UUID 互转换 ============ -->
+        <section id="tab-uuid" class="tab-content">
+            <div class="card">
+                <h3>UUID 互转换 <span class="spacer"></span><span class="alias-note">十六进制 ↔ 两个 long ↔ 整型数组，任意形式互转</span></h3>
+                <form id="uuidForm">
+                    <div class="form-row">
+                        <div class="field">
+                            <label for="uuidMode">输入格式</label>
+                            <select id="uuidMode">
+                                <option value="auto">自动识别（推荐）</option>
+                                <option value="hex">十六进制（可带横线）</option>
+                                <option value="longs">两个 long（高64位 + 低64位）</option>
+                                <option value="ints">整型数组 / 四个整数</option>
+                                <option value="name">玩家名</option>
+                            </select>
+                        </div>
+                        <div class="field">
+                            <label for="uuidInput" id="uuidInputLabel">UUID / 玩家名</label>
+                            <input type="text" id="uuidInput" placeholder="十六进制（可带横线）、[I; a, b, c, d]、两个 long，或玩家名">
+                        </div>
+                        <div class="field" id="uuidInput2Wrap" style="display:none">
+                            <label for="uuidInput2">低64位 long</label>
+                            <input type="text" id="uuidInput2" placeholder="例如 -1440346472364307890L">
+                        </div>
+                        <button class="btn" type="submit" id="uuidConvertBtn">转换</button>
+                    </div>
+                </form>
+                <p class="hint">
+                    支持的形式：十六进制（带/不带横线）、高/低 64 位 long、整型数组 <code>[I; a, b, c, d]</code>、四个整数的列表（逗号或空格分隔）。
+                    选「自动识别」时会按输入内容自动判断；选「两个 long」会多出一个输入框，可以分别填高64位与低64位（单个 long 无法还原 UUID）。
+                    输入玩家名时会向配置的来源查询真实 UUID（仅点击按钮时请求，结果缓存 60 秒）；UUID 形式的输入全程在浏览器本地转换，不会发出任何请求。
+                    其它页面里凡是显示 UUID 的地方，右侧都有「转换」按钮，可直接跳到这里并自动转换。
+                </p>
+                <div class="result-box" id="uuidResult"></div>
+                <div id="uuidFormsWrap" class="empty">输入 UUID 或玩家名后在此显示各种等价形式</div>
             </div>
         </section>
 
@@ -2169,6 +2208,7 @@
         $('queryForm').addEventListener('submit', e => { e.preventDefault(); queryPlayer(); });
         $('aliasForm').addEventListener('submit', e => { e.preventDefault(); queryAlias(); });
         $('remoteForm').addEventListener('submit', e => { e.preventDefault(); queryRemote(); });
+        $('uuidForm').addEventListener('submit', e => { e.preventDefault(); uuidConvert(); });
         $('queryToRemote').addEventListener('click', () => gotoRemote($('queryPlayerName').value.trim()));
 
         // 当前展示的角色信息（用于曾用名列表里标注"命中"）
@@ -2275,6 +2315,203 @@
             if (s.length !== 32) return String(uuid);
             return s.slice(0, 8) + '-' + s.slice(8, 12) + '-' + s.slice(12, 16) + '-' + s.slice(16, 20) + '-' + s.slice(20);
         }
+        // UUID 各种表示形式互转（与常见 MC 工具一致）：
+        //   十六进制（带/不带横线）、高/低 64 位 long、整型数组 [I; a, b, c, d]、四个整数列表
+        // NBT / 存档里用整型数组，Java 代码与部分插件配置用两个 long，命令与 Web 接口多用十六进制
+        function uuidForms(uuid) {
+            const h = String(uuid || '').replace(/-/g, '').toLowerCase();
+            if (!/^[0-9a-f]{32}$/.test(h)) return null;
+            const big = BigInt('0x' + h);
+            const hi = BigInt.asIntN(64, big >> 64n);                       // 高 64 位（有符号）
+            const lo = BigInt.asIntN(64, big & 0xffffffffffffffffn);        // 低 64 位（有符号）
+            const ints = [0, 1, 2, 3].map(i => BigInt.asIntN(32, BigInt('0x' + h.slice(i * 8, i * 8 + 8))));
+            return {
+                plain: h,
+                dashed: h.slice(0, 8) + '-' + h.slice(8, 12) + '-' + h.slice(12, 16) + '-' + h.slice(16, 20) + '-' + h.slice(20),
+                longHigh: String(hi) + 'L',
+                longLow: String(lo) + 'L',
+                longPair: String(hi) + ', ' + String(lo),
+                intArray: '[I; ' + ints.join(', ') + ']',
+                intList: ints.join(',')
+            };
+        }
+
+        // 数值列表 → 十六进制 UUID：count=2 视为两个 64 位 long，count=4 视为四个 32 位整数
+        function numsToHex(parts, count) {
+            for (const p of parts) if (!/^[-+]?\d+[Ll]?$/.test(p)) return null;
+            try {
+                if (count === 4) return parts.map(p => BigInt.asUintN(32, BigInt(p)).toString(16).padStart(8, '0')).join('');
+                if (count === 2) return parts.map(p => BigInt.asUintN(64, BigInt(p.replace(/[Ll]$/, ''))).toString(16).padStart(16, '0')).join('');
+            } catch (e) {
+                return null;
+            }
+            return null;
+        }
+        function splitNums(s) {
+            return String(s || '').replace(/^\[\s*[Ii]\s*;?/, '').replace(/\]$/, '').split(/[\s,]+/).filter(Boolean);
+        }
+        // 解析 UUID 互转换的输入，返回三种结果之一：
+        //   { hex }   能确定 UUID（十六进制 / 两个 long / 四个 int）
+        //   { error } 形式不对或数值不够——必须明确报错，不能退化成"按玩家名查询"，
+        //             否则会拿 -5063935035990447663L 这种半截数值去问上游
+        //   { name }  按玩家名处理（由调用方向上游查询）
+        // opts.mode: auto（默认，自动识别）/ hex / ints / longs / name
+        // opts.second: mode=longs 时的第二个 long（低64位）
+        function uuidParseInput(value, opts) {
+            opts = opts || {};
+            const mode = opts.mode || 'auto';
+            const s = String(value == null ? '' : value).trim();
+            const second = String(opts.second == null ? '' : opts.second).trim();
+            if (mode === 'name') return s ? { name: s } : { error: '请输入玩家名' };
+            if (mode === 'longs') {
+                if (!s || !second) {
+                    return { error: '请把「高64位」和「低64位」两个 long 都填上：UUID = 高64位 + 低64位，单个 long 不足以还原。' };
+                }
+                const h = numsToHex([s, second], 2);
+                return h ? { hex: h } : { error: '两个 long 必须是整数（可带 L 后缀）' };
+            }
+            if (!s) return { error: '请输入 UUID（任意形式）或玩家名' };
+            if (mode === 'hex') {
+                const h = s.replace(/^0x/i, '').replace(/-/g, '');
+                return /^[0-9a-f]{32}$/i.test(h) ? { hex: h.toLowerCase() } : { error: '不是 32 位十六进制 UUID（可带横线）' };
+            }
+            if (mode === 'ints') {
+                const parts = splitNums(s);
+                if (parts.length !== 4) return { error: '整型数组需要 4 个 32 位整数，当前有 ' + parts.length + ' 个' };
+                const h = numsToHex(parts, 4);
+                return h ? { hex: h } : { error: '整数格式不正确或超出 32 位范围' };
+            }
+            // auto：自动识别
+            const hexCandidate = s.replace(/^0x/i, '').replace(/-/g, '');
+            if (/^[0-9a-f]{32}$/i.test(hexCandidate)) return { hex: hexCandidate.toLowerCase() };
+            const parts = splitNums(s);
+            if (parts.length > 0 && parts.every(p => /^[-+]?\d+[Ll]?$/.test(p))) {
+                const hex = numsToHex(parts, parts.length);
+                if (hex) return { hex: hex };
+                if (parts.length === 1) {
+                    return { error: '只给了一个数值，不足以还原 UUID：UUID = 高64位 + 低64位 两个 long（或 4 个 32 位整数）。请把两个值一起贴上（用逗号或空格分隔），或在上面的「输入格式」里选择「两个 long」分别填入两格；也可以直接输入 32 位十六进制。' };
+                }
+                return { error: '数值个数不对：需要 2 个 64 位 long 或 4 个 32 位整数，当前有 ' + parts.length + ' 个。' };
+            }
+            return { name: s };
+        }
+        // 从任意常见形式解析出规范 UUID（32 位无横线十六进制），解析不出来返回 null
+        function uuidFromAny(value) {
+            const r = uuidParseInput(value);
+            return r.hex || null;
+        }
+        // 切换标签页（供各处的"转换/跳转"入口复用）
+        function switchTab(name) {
+            const btn = $$('.tab').find(b => b.dataset.tab === name);
+            if (btn) btn.click();
+        }
+        // 行内入口：只要该单元格是 UUID（任意形式）就给出"转换"按钮，跳到 UUID 互转换页并填入
+        function uuidJumpButton(value) {
+            const hex = uuidFromAny(value);
+            if (!hex) return null;
+            return h('button', {
+                class: 'btn secondary sm',
+                title: '在"UUID 互转换"中打开',
+                onclick: () => {
+                    switchTab('uuid');
+                    $('uuidMode').value = 'auto';      // 跳转过来的值已经是 UUID，用自动识别即可
+                    applyUuidMode();
+                    $('uuidInput').value = hex;
+                    uuidConvert();
+                }
+            }, '转换');
+        }
+        // 统一的"字段 = 值"表格：右侧值带复制按钮；值本身是 UUID（任意形式）时再给一个"转换"入口
+        // opts.jump === false 可关掉入口（UUID 互转换页自己的结果表格里不需要）
+        function buildParsedTable(rows, opts) {
+            opts = opts || {};
+            const table = h('table', { class: 'parsed-table' });
+            const tbody = h('tbody');
+            rows.forEach(([k, v]) => {
+                const text = String(v == null ? '' : v);
+                tbody.appendChild(h('tr', null,
+                    h('th', { text: k }),
+                    h('td', null,
+                        h('span', { text: text }),
+                        h('button', { class: 'btn secondary sm copy-btn', onclick: () => copyText(text) }, '复制'),
+                        opts.jump === false ? null : uuidJumpButton(text)
+                    )
+                ));
+            });
+            table.appendChild(tbody);
+            return table;
+        }
+        // 把 UUID 的等价形式渲染成表格（每行可复制）
+        function renderUuidForms(hex, note) {
+            const wrap = $('uuidFormsWrap');
+            wrap.innerHTML = '';
+            wrap.classList.remove('empty');
+            const f = uuidForms(hex);
+            if (!f) { wrap.classList.add('empty'); wrap.textContent = '不是有效的 UUID'; return; }
+            const rows = [
+                ['十六进制（带横线）', f.dashed],
+                ['十六进制（无横线）', f.plain],
+                ['高64位（long）', f.longHigh],
+                ['低64位（long）', f.longLow],
+                ['两个 long', f.longPair],
+                ['整型数组 [I; ...]', f.intArray],
+                ['四个整数列表', f.intList]
+            ];
+            if (note) wrap.appendChild(h('div', { class: 'alias-note', text: note }));
+            wrap.appendChild(buildParsedTable(rows, { jump: false }));
+        }
+        // 按所选"输入格式"调整输入框：选两个 long 时多显示一格（分别填高/低 64 位）
+        const UUID_MODE_UI = {
+            auto: { label: 'UUID / 玩家名', ph: '十六进制（可带横线）、[I; a, b, c, d]、两个 long，或玩家名', second: false },
+            hex: { label: '十六进制 UUID', ph: '例如 0acc9c89-09b6-25c9-ec02-dc83c13d0a4e', second: false },
+            longs: { label: '高64位 long', ph: '例如 778168948015637961L', second: true },
+            ints: { label: '整型数组 / 四个整数', ph: '例如 [I; 181181577, 162932169, -335356797, -1052964274]', second: false },
+            name: { label: '玩家名', ph: '例如 wifi_left', second: false }
+        };
+        function applyUuidMode() {
+            const mode = $('uuidMode').value;
+            const ui = UUID_MODE_UI[mode] || UUID_MODE_UI.auto;
+            $('uuidInputLabel').textContent = ui.label;
+            $('uuidInput').placeholder = ui.ph;
+            $('uuidInput2Wrap').style.display = ui.second ? '' : 'none';
+            if (!ui.second) $('uuidInput2').value = '';
+        }
+        $('uuidMode').addEventListener('change', () => { applyUuidMode(); hideBox('uuidResult'); });
+
+        // UUID 互转换：按所选格式解析输入，输出全部等价形式
+        async function uuidConvert() {
+            const mode = $('uuidMode').value;
+            const btn = $('uuidConvertBtn');
+            const parsed = uuidParseInput($('uuidInput').value, { mode: mode, second: $('uuidInput2').value });
+            if (parsed.hex) {
+                $('uuidFormsWrap').innerHTML = '';
+                renderUuidForms(parsed.hex, '已在浏览器本地完成转换（未发起任何请求）');
+                showBox('uuidResult', '转换完成（本地）', true);
+                return;
+            }
+            if (parsed.error) {
+                // 格式/数值问题就地报错，不要当成玩家名去查上游
+                $('uuidFormsWrap').innerHTML = '';
+                showBox('uuidResult', parsed.error, false);
+                return;
+            }
+            // 玩家名：向配置的来源查询真实 UUID（只有点击按钮才会请求）
+            hideBox('uuidResult');
+            setLoading(btn, true);
+            try {
+                const info = await manageFetch(`/manage/player-info/${encodeURIComponent(parsed.name)}`, {});
+                renderUuidForms(info.uuid, `玩家名 ${info.name || parsed.name} 的 UUID（来源：${info.fromName || info.resolvedFrom || '未知'}）`);
+                showBox('uuidResult', '已从来源解析出 UUID：' + (info.name || parsed.name), true);
+            } catch (e) {
+                $('uuidFormsWrap').innerHTML = '';
+                const notFound = /PLAYER_NOT_FOUND/.test(e.message || '');
+                showBox('uuidResult', notFound
+                    ? '未在任何已配置来源找到这个玩家名（离线服的玩家名不在皮肤站里，查不到属于正常）'
+                    : '解析失败：' + e.message, false);
+            } finally {
+                setLoading(btn, false);
+            }
+        }
 
         function renderQueryInfo(info, query) {
             lastInfo = info;
@@ -2295,17 +2532,18 @@
                 banText = (!Number.isFinite(bt) || bt === 0) ? '是（永久）' : (bt > Date.now() ? '是（至 ' + fmtTime(bt) + '）' : '否（已过期）');
             }
             const chainText = (info.lookupChain || []).map(c => (c.fromName || c.from) + (c.found ? ' ✓' : ' ✗')).join(' → ');
+            const viaText = info.queryVia === 'uuid' ? '按 UUID' : '按名字';
             const displayName = info.name || query;
 
             const rows = [
                 ['当前名称', displayName],
                 ['UUID', info.uuid ? fmtUuid(info.uuid) : ''],
-                ['解析来源', info.fromName || info.resolvedFrom || ''],
-                ['档案来源', info.profileFrom || (cache ? cache.from : '') || ''],
+                ['解析来源', (info.fromName || info.resolvedFrom || '') + (info.resolvedVia ? '（' + (info.resolvedVia === 'uuid' ? '按 UUID' : '按名字') + '命中）' : '')],
+                ['本地档案来源', info.profileFrom || (cache ? cache.from : '') || ''],
                 ['账号状态', info.online === false ? '来源未返回档案（不在线或不存在）' : '来源已返回真实档案'],
                 ['皮肤模型', skinModel === 'slim' ? 'slim（纤细）' : (skinModel === 'classic' ? 'classic（经典）' : '')],
                 ['披风', capeUrl ? '有' : '无'],
-                ['查询链', chainText],
+                ['查询链', viaText + '：' + chainText],
                 ['曾用名', (info.history && info.history.old_names && info.history.old_names.length) ? info.history.old_names.join('、') : '无'],
                 ['档案最早名称', info.history && info.history.oldest ? info.history.oldest : ''],
                 ['最后登录', cache ? fmtTime(cache.lastLogin) : ''],
@@ -2313,18 +2551,7 @@
                 ['IP', cache && cache.ip != null ? cache.ip : '']
             ];
             const table = h('table', { class: 'parsed-table' });
-            const tbody = h('tbody');
-            rows.forEach(([k, v]) => {
-                tbody.appendChild(h('tr', null,
-                    h('th', { text: k }),
-                    h('td', null,
-                        h('span', { text: String(v == null ? '' : v) }),
-                        h('button', { class: 'btn secondary sm copy-btn', onclick: () => copyText(String(v == null ? '' : v)) }, '复制')
-                    )
-                ));
-            });
-            table.appendChild(tbody);
-            wrap.appendChild(table);
+            wrap.appendChild(buildParsedTable(rows));
             const proxySkin = info.textures && info.textures.skin ? (info.textures.skin.proxyUrl || null) : null;
             const proxyCape = info.textures && info.textures.cape ? (info.textures.cape.proxyUrl || null) : null;
             wrap.appendChild(renderSkinPanel(displayName, info.uuid, skinUrl, capeUrl, skinModel, info.preview3d === true, { skin: proxySkin, cape: proxyCape }));
@@ -2657,18 +2884,7 @@
                     ['最后登录', m.records ? fmtTime(m.records.lastLogin) : '']
                 ];
                 const table = h('table', { class: 'parsed-table' });
-                const tbody = h('tbody');
-                rows.forEach(([k, v]) => {
-                    tbody.appendChild(h('tr', null,
-                        h('th', { text: k }),
-                        h('td', null,
-                            h('span', { text: String(v == null ? '' : v) }),
-                            h('button', { class: 'btn secondary sm copy-btn', onclick: () => copyText(String(v == null ? '' : v)) }, '复制')
-                        )
-                    ));
-                });
-                table.appendChild(tbody);
-                box.appendChild(table);
+                box.appendChild(buildParsedTable(rows));
                 box.appendChild(renderNameFlow(m, queryName));
                 box.appendChild(renderAliasList(m.name, m, queryName, []));
                 box.appendChild(h('div', { class: 'skin-panel' },
@@ -2725,18 +2941,7 @@
                 ['IP', data.ip ?? ''],
             ];
             const table = h('table', { class: 'parsed-table' });
-            const tbody = h('tbody');
-            rows.forEach(([k, v]) => {
-                tbody.appendChild(h('tr', null,
-                    h('th', { text: k }),
-                    h('td', null,
-                        h('span', { text: String(v) }),
-                        h('button', { class: 'btn secondary sm copy-btn', onclick: () => copyText(String(v)) }, '复制')
-                    )
-                ));
-            });
-            table.appendChild(tbody);
-            wrap.appendChild(table);
+            wrap.appendChild(buildParsedTable(rows));
         }
 
         $('queryToModify').addEventListener('click', () => {
@@ -3042,6 +3247,7 @@
         initTheme();
         updateBanUI();
         updateBanTimeMode();
+        applyUuidMode();
         disableBrowserAutofill();
 
         $('logoutBtn').addEventListener('click', async () => {

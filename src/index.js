@@ -264,20 +264,29 @@ function isCrossSiteRequest(req) {
     // 大小写不敏感：浏览器会把 Origin 里的主机名小写化，而 Host 头保留用户输入的大小写
     return !hosts.some(h => typeof h === 'string' && h.trim().toLowerCase() === originHost);
 }
+// 管理接口的拒绝/失败统一记一行日志，便于排查"谁在试探"。
+// 注意：详细的排查信息只进日志，不放进响应体（未鉴权的调用者看不到内部细节）。
+function logManageReject(req, status, reason) {
+    log(`[MANAGE][${status}] ${reason} - ${req.method} ${req.originalUrl} from ${req.ip || 'unknown'}`);
+}
 function requireManageSession(handleUrl) {
     return function (req, res, next) {
         let session = getAdminSession(req);
         if (!session) {
-            res.status(401).send({ "error": "未登录或登录已失效，请重新登录管理面板" }).end();
+            // 面板对 401 使用自己的提示文案（不读这里的 body），所以这里保持通用，不透露鉴权方式
+            logManageReject(req, 401, 'Unauthorized (no valid admin session)');
+            res.status(401).send({ "error": "Unauthorized" }).end();
             return;
         }
         if (handleUrl != null && session.m !== handleUrl) {
+            // 只有已登录的会话才可能走到这里，面板会原样展示该原因，故保留可读文案
+            logManageReject(req, 403, `Forbidden (session sub-config <${session.m}> != <${handleUrl}>)`);
             res.status(403).send({ "error": "当前登录的子配置无权访问该接口" }).end();
             return;
         }
         if (isCrossSiteRequest(req)) {
             // 打印实际取值，便于排查反向代理改写 Host、主机名大小写等部署问题
-            log(`[MANAGE] Rejected cross-site request to ${req.originalUrl} (Origin: ${req.headers.origin || '-'}, Host: ${req.headers.host || '-'}, Sec-Fetch-Site: ${req.headers['sec-fetch-site'] || '-'})`);
+            logManageReject(req, 403, `Forbidden (cross-site; Origin=${req.headers.origin || '-'} Host=${req.headers.host || '-'} Sec-Fetch-Site=${req.headers['sec-fetch-site'] || '-'})`);
             res.status(403).send({ "error": "跨站请求被拒绝：请通过配置的 manage_url 同源打开管理面板（若管理端口在反向代理之后，请保留 Host 头或开启 manage_trust_proxy）" }).end();
             return;
         }
@@ -291,18 +300,17 @@ function requireBanApiEnabled(req, res, next) {
         next();
         return;
     }
-    log(`[BAN_API] Rejected ${req.method} ${req.originalUrl}: ban_api is disabled (default).`);
-    res.status(403).send({
-        "error": "封禁 API 未启用",
-        "errorMessage": "对外封禁接口默认关闭；如需外部调用请在配置中设置 ban_api: true。管理面板请使用 /manage/ban/* 接口。"
-    }).end();
+    // 对未鉴权的调用者只回通用错误；"如何开启"只写日志（面板已改用 /manage/ban/*，不依赖该接口）
+    logManageReject(req, 403, 'Forbidden (ban_api is disabled; set ban_api: true to enable the external ban API)');
+    res.status(403).send({ "error": "Forbidden" }).end();
 }
 async function handleSkinProxy(req, res) {
     if (!skinProxyEnabled) {
-        res.status(404).send({ "error": "Skin proxy is disabled" }).end();
+        res.status(404).send({ "error": "Not Found" }).end();
         return;
     }
     if (!hasManageAccess(req)) {
+        logManageReject(req, 403, 'Forbidden (skin proxy requires an admin session)');
         res.status(403).send({ "error": "Forbidden" }).end();
         return;
     }
@@ -1204,17 +1212,23 @@ function setCachedProfile(key, value) {
     }
     profile_cache.set(key, { value: value, expire: Date.now() + PROFILE_CACHE_TTL });
 }
-// 管理端：按名字或 uuid 解析玩家真实信息（缓存优先 → 子配置 handles 顺序）
+// 管理端：按名字或 uuid 解析玩家真实信息
+// 来源顺序：显式指定的 from → push 表 → 本地档案记录的来源 → 子配置 handles 顺序
+// 查询形态：跟随用户输入（输入 UUID 就按 UUID 查；输入名字就按名字查）
 async function resolvePlayerInfo(cache, handle, query, fromOverride) {
     let info = null;
-    let uuid = null;
-    if (isUUIDLike(query)) {
-        uuid = normalizeUUID(query);
-        let name = cache.lookup_uuid(uuid);
+    let uuidQuery = isUUIDLike(query) ? normalizeUUID(query) : null;
+    // 本地档案里的 uuid 只作为"名字查不到时的兜底"（例如玩家已改名），
+    // 不再用来决定查询形态：那个 uuid 往往只有档案记录的来源认识，
+    // 拿它去问其它来源（尤其是用户显式选定的来源）必然查不到，
+    // 结果就变成了"无论选哪个来源，最后都回到缓存记录的来源"。
+    let cachedUuid = null;
+    if (uuidQuery) {
+        let name = cache.lookup_uuid(uuidQuery);
         if (name) info = cache.lookup(name);
     } else {
         info = cache.lookup(query);
-        if (info && info.uuid) uuid = normalizeUUID(info.uuid);
+        if (info && info.uuid) cachedUuid = normalizeUUID(info.uuid);
     }
     let preferred = null;
     if (fromOverride) {
@@ -1244,27 +1258,30 @@ async function resolvePlayerInfo(cache, handle, query, fromOverride) {
     }
     let profile = null;
     let resolvedFrom = null;
-    for (let api of list) {
-        let target = null;
-        let cacheKey = null;
-        if (uuid) {
-            target = uuid;
-            cacheKey = 'u:' + api.id + ':' + uuid;
-        } else {
-            target = query;
-            cacheKey = 'n:' + api.id + ':' + String(query).toLowerCase();
+    let resolvedVia = null;
+    // 按 name/uuid 走一遍全部候选来源，命中即停
+    async function lookupPass(via, target) {
+        for (let api of list) {
+            let cacheKey = (via === 'uuid' ? 'u:' : 'n:') + api.id + ':' + String(target).toLowerCase();
+            let got = getCachedProfile(cacheKey);
+            if (got === null) {
+                got = via === 'uuid' ? await fetchProfileByUuid(api, target) : await fetchProfileByName(api, target);
+                setCachedProfile(cacheKey, got);
+            }
+            chain.push({ from: api.id, fromName: api.name, found: !!got, via: via });
+            if (got) return { profile: got, from: api.id, via: via };
         }
-        let got = getCachedProfile(cacheKey);
-        if (got === null) {
-            got = uuid ? await fetchProfileByUuid(api, target) : await fetchProfileByName(api, target);
-            setCachedProfile(cacheKey, got);
-        }
-        chain.push({ from: api.id, fromName: api.name, found: !!got });
-        if (got) {
-            profile = got;
-            resolvedFrom = api.id;
-            break;
-        }
+        return null;
+    }
+    let hit = await lookupPass(uuidQuery ? 'uuid' : 'name', uuidQuery || query);
+    if (!hit && !uuidQuery && cachedUuid) {
+        // 名字在任何来源都没命中：再用本地档案记录的 uuid 试一次，兼容"玩家已改名"的情况
+        hit = await lookupPass('uuid', cachedUuid);
+    }
+    if (hit) {
+        profile = hit.profile;
+        resolvedFrom = hit.from;
+        resolvedVia = hit.via;
     }
     if (!profile) {
         return {
@@ -1274,7 +1291,7 @@ async function resolvePlayerInfo(cache, handle, query, fromOverride) {
         };
     }
     let finalName = (typeof profile.name === 'string' && profile.name !== '') ? profile.name : (info ? info.name : query);
-    let finalUUID = profile.id ? normalizeUUID(profile.id) : uuid;
+    let finalUUID = profile.id ? normalizeUUID(profile.id) : uuidQuery;
     // 档案可能缺 textures（如 /api/profiles/minecraft 的返回值），补取一次完整档案
     let textureSource = profile;
     if (!extractTextureInfo(textureSource) && finalUUID) {
@@ -1300,6 +1317,9 @@ async function resolvePlayerInfo(cache, handle, query, fromOverride) {
     if (!info && finalName) info = cache.lookup(finalName);
     let history = finalName ? cache.name_history(finalName) : null;
     let warnings = [];
+    if (resolvedVia === 'uuid' && !uuidQuery) {
+        warnings.push("按名字未在任何来源命中，已改用本地档案记录的 UUID 查询（该玩家可能已改名）");
+    }
     if (!textures) {
         warnings.push("该来源未提供贴图信息（textures），无法渲染皮肤/披风");
     } else if (!skinProxyEnabled) {
@@ -1309,6 +1329,8 @@ async function resolvePlayerInfo(cache, handle, query, fromOverride) {
         query: query,
         name: finalName,
         uuid: finalUUID,
+        queryVia: uuidQuery ? 'uuid' : 'name',
+        resolvedVia: resolvedVia,
         resolvedFrom: resolvedFrom,
         fromName: lookupApi(resolvedFrom) ? lookupApi(resolvedFrom).name : resolvedFrom,
         profileFrom: info ? info.from : null,
@@ -2041,16 +2063,19 @@ uiApp.post(manageUrl + '/login', manageSecurityHeaders, manageLimiter, function 
             let data = JSON.parse(body.value);
             let idx = HANDLES.findIndex(h => h.url === data.url);
             if (idx < 0) {
+                // 登录页会原样展示这些文案，故保持可读；同时记日志便于发现试探行为
+                logManageReject(req, 401, 'Login failed (unknown sub-config: ' + (data.url == null ? 'null' : String(data.url).slice(0, 64)) + ')');
                 res.status(401).send({ "error": "未知的子配置" }).end();
                 return;
             }
             let handle = HANDLES[idx];
             if (!handle.secret) {
+                logManageReject(req, 401, `Login failed (sub-config <${handle.name || handle.url}> has no secret configured)`);
                 res.status(401).send({ "error": "该子配置未配置管理密钥（secret）" }).end();
                 return;
             }
             if (!safeSecretEqual(String(data.secret || ''), handle.secret)) {
-                log(`[LOGIN] Failed admin login attempt for <${handle.name || data.url}> from ${req.ip}`);
+                logManageReject(req, 401, `Login failed (wrong secret for <${handle.name || handle.url}>)`);
                 res.status(401).send({ "error": "管理密钥错误" }).end();
                 return;
             }
@@ -2143,13 +2168,9 @@ function manageMethodHint(req, res, next) {
     let isManagePath = HANDLES.some(h => typeof h.url === 'string' && h.url !== '' && (
         pathname === h.url + '/manage' || pathname.indexOf(h.url + '/manage/') === 0 || pathname.indexOf(h.url + '/ban/') === 0));
     if (!isManagePath) { next(); return; }
-    log(`[MANAGE] ${req.method} ${req.url} rejected with 405 (management API is POST-only)`);
-    res.status(405).set('Allow', 'POST').send({
-        "error": "Method Not Allowed",
-        "errorMessage": "管理接口只接受 POST：请通过管理面板操作，或先 POST {manage_url}/login 取得会话 Cookie 后再调用",
-        "method": req.method,
-        "path": pathname
-    }).end();
+    // 响应体只给标准错误；操作指引只写日志
+    logManageReject(req, 405, 'Method Not Allowed (management API is POST-only; use the panel, or POST {manage_url}/login for a session cookie)');
+    res.status(405).set('Allow', 'POST').send({ "error": "Method Not Allowed" }).end();
 }
 // 如果启用了独立管理服务器，为其添加 favicon 和 404 处理
 if (manageApp) {
